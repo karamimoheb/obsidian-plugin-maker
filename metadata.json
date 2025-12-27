@@ -1,0 +1,8 @@
+{
+  "name": "Obsidian Plugin Architect",
+  "description": "A specialized IDE for developing Obsidian plugins with AI-assisted code generation, project scaffolding, and ZIP export. Support for Local Sync Folder.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
