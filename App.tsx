@@ -11,7 +11,8 @@ import { ProjectState, FileEntry, ChatMessage, ChatAttachment, AIModelConfig, Pr
 import { DEFAULT_FILES } from './constants';
 import { processArchitectRequest, processDebugRequest, processLearningStep } from './services/gemini';
 import { saveProject, loadProject, saveSnapshot, getSnapshots, deleteSnapshot, saveIssue, getIssues, deleteIssue } from './services/db';
-import { Sun, Moon, Loader2, Menu, MessageSquare, AlertCircle, X, History, Bug, ClipboardList, BrainCircuit } from 'lucide-react';
+import { scanLocalDirectory } from './services/sync';
+import { Sun, Moon, Loader2, Menu, MessageSquare, AlertCircle, X, History, Bug, ClipboardList, BrainCircuit, RefreshCcw } from 'lucide-react';
 
 const PREDEFINED_MODELS: AIModelConfig[] = [
   { id: '3flash', name: 'Gemini 3 Flash', baseUrl: '', apiKey: '', modelName: 'gemini-3-flash-preview', provider: 'gemini' },
@@ -57,6 +58,7 @@ const App: React.FC = () => {
   
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const projectRef = useRef<ProjectState>(project);
+  const directoryHandleRef = useRef<FileSystemDirectoryHandle | null>(null);
 
   useEffect(() => {
     projectRef.current = project;
@@ -94,6 +96,67 @@ const App: React.FC = () => {
   const [issues, setIssues] = useState<ProjectIssue[]>([]);
 
   const getJSZip = () => (window as any).JSZip;
+
+  const handleGlobalReset = () => {
+    if (confirm("آیا از بازنشانی کامل پروژه اطمینان دارید؟ تمام فایل‌ها، تاریخچه چت و Roadmap پاک خواهند شد و به قالب پیش‌فرض ابسیدین برمی‌گردید.")) {
+      const resetState: ProjectState = {
+        files: DEFAULT_FILES,
+        activeFilePath: 'README.md',
+        selectedModelId: '3flash',
+        chatHistory: [],
+        changedFilePaths: [],
+        theme: project.theme,
+        models: PREDEFINED_MODELS,
+        isSynced: false,
+        issues: [],
+        tasks: [],
+        learningSession: {
+          isActive: false,
+          currentStep: 0,
+          steps: INITIAL_LEARNING_STEPS,
+          isPaused: false,
+          isZipImported: false
+        }
+      };
+      setProject(resetState);
+      saveProject(resetState);
+      setIssues([]);
+      // Clear database lists
+      localStorage.clear(); // If needed for other states
+    }
+  };
+
+  const handleSyncLocalFolder = async () => {
+    try {
+      if (!(window as any).showDirectoryPicker) {
+        setErrorMessage("Browser does not support File System API. Use Chrome or Edge.");
+        return;
+      }
+      
+      const handle = await (window as any).showDirectoryPicker();
+      directoryHandleRef.current = handle;
+      
+      setIsProcessing(true);
+      const localFiles = await scanLocalDirectory(handle);
+      
+      if (localFiles.length > 0) {
+        const newState = {
+          ...project,
+          files: localFiles,
+          isSynced: true,
+          activeFilePath: localFiles[0].path
+        };
+        setProject(newState);
+        saveProject(newState);
+      }
+    } catch (e: any) {
+      if (e.name !== 'AbortError') {
+        setErrorMessage("Sync Failed: " + e.message);
+      }
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   const executeLearningLoop = async (stepIdx: number) => {
     if (stepIdx >= INITIAL_LEARNING_STEPS.length) {
@@ -186,7 +249,6 @@ const App: React.FC = () => {
   };
 
   const handleStartLearning = () => {
-    // Save current state as backup before starting learning loop
     const freshSession = {
       ...project.learningSession!,
       isActive: true,
@@ -382,7 +444,7 @@ const App: React.FC = () => {
       )}
 
       <aside style={{ width: leftPanelVisible ? '260px' : '0px' }} className="flex-shrink-0 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 transition-all duration-300 overflow-hidden">
-        <FileTree files={project.files} activeFile={project.activeFilePath} changedFilePaths={project.changedFilePaths || []} onSelect={(path) => setProject(p => ({ ...p, activeFilePath: path }))} onSync={() => {}} onDownload={handleDownloadZip} onToggleCollapse={() => setLeftPanelVisible(false)} onAddFile={(name) => setProject(p => ({ ...p, files: [...p.files, { name, path: name, content: '', type: 'file' }], activeFilePath: name }))} onDeleteFile={(path) => setProject(p => ({ ...p, files: p.files.filter(f => f.path !== path), activeFilePath: p.activeFilePath === path ? 'README.md' : p.activeFilePath }))} onImportZip={handleImportZip} />
+        <FileTree files={project.files} activeFile={project.activeFilePath} changedFilePaths={project.changedFilePaths || []} onSelect={(path) => setProject(p => ({ ...p, activeFilePath: path }))} isSynced={project.isSynced} onSync={handleSyncLocalFolder} onDownload={handleDownloadZip} onToggleCollapse={() => setLeftPanelVisible(false)} onAddFile={(name) => setProject(p => ({ ...p, files: [...p.files, { name, path: name, content: '', type: 'file' }], activeFilePath: name }))} onDeleteFile={(path) => setProject(p => ({ ...p, files: p.files.filter(f => f.path !== path), activeFilePath: p.activeFilePath === path ? 'README.md' : p.activeFilePath }))} onImportZip={handleImportZip} />
       </aside>
 
       <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-zinc-950 relative">
@@ -392,6 +454,10 @@ const App: React.FC = () => {
             <h1 className="text-sm font-bold tracking-tight">Architect IDE Pro</h1>
           </div>
           <div className="flex items-center gap-1 sm:gap-2">
+            <button onClick={handleGlobalReset} className="p-2 hover:bg-red-500/10 rounded-lg text-zinc-500 hover:text-red-500 transition-all" title="Factory Reset">
+              <RefreshCcw size={18} />
+            </button>
+            <div className="w-px h-4 bg-zinc-200 dark:bg-zinc-800 mx-1" />
             {project.learningSession?.isZipImported && (
               <button onClick={() => setShowLearningMode(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-bold bg-blue-600/10 text-blue-500 border border-blue-500/30 hover:bg-blue-600 hover:text-white transition-all shadow-sm">
                 <BrainCircuit size={16} /> <span className="hidden sm:inline">Learning Mode</span>
