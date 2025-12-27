@@ -25,7 +25,7 @@ const RoadmapManager: React.FC<RoadmapManagerProps> = ({ tasks, onClose, onExecu
               <ClipboardList className="text-blue-500" size={24} />
             </div>
             <div>
-              <h2 className="font-bold text-xl text-white font-vazir">نقشه راه پروژه</h2>
+              <h2 className="font-bold text-xl text-white">Project Roadmap</h2>
               <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold font-mono">Project Scope & Smart Suggestions</p>
             </div>
           </div>
@@ -56,8 +56,8 @@ const RoadmapManager: React.FC<RoadmapManagerProps> = ({ tasks, onClose, onExecu
           {/* Pending Tasks */}
           {todoTasks.length > 0 && (
             <section>
-              <h3 className="text-[10px] font-bold text-amber-500 uppercase tracking-widest mb-4 flex items-center gap-2 font-vazir">
-                <Circle size={14} /> کارهای باقی‌مانده (Todo)
+              <h3 className="text-[10px] font-bold text-amber-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                <Circle size={14} /> Pending Tasks (Todo)
               </h3>
               <div className="space-y-3">
                 {todoTasks.map(task => (
@@ -65,15 +65,15 @@ const RoadmapManager: React.FC<RoadmapManagerProps> = ({ tasks, onClose, onExecu
                     <div className="flex items-center gap-3">
                       <Circle className="text-amber-500/50 flex-shrink-0" size={16} />
                       <div>
-                        <div className="text-zinc-200 text-sm font-vazir font-bold">{task.title}</div>
-                        {task.description && <div className="text-[10px] text-zinc-500 mt-0.5 font-vazir">{task.description}</div>}
+                        <div className="text-zinc-200 text-sm font-bold">{task.title}</div>
+                        {task.description && <div className="text-[10px] text-zinc-500 mt-0.5">{task.description}</div>}
                       </div>
                     </div>
                     <button 
                       onClick={() => onExecuteTask(`Please complete this pending task: ${task.title}`)}
                       className="flex items-center gap-2 bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all active:scale-95"
                     >
-                      <Play size={12} fill="currentColor" /> <span className="font-vazir">اجرا</span>
+                      <Play size={12} fill="currentColor" /> <span>Execute</span>
                     </button>
                   </div>
                 ))}
@@ -84,8 +84,8 @@ const RoadmapManager: React.FC<RoadmapManagerProps> = ({ tasks, onClose, onExecu
           {/* Smart Suggestions */}
           {suggestions.length > 0 && (
             <section>
-              <h3 className="text-[10px] font-bold text-purple-500 uppercase tracking-widest mb-4 flex items-center gap-2 font-vazir">
-                <Lightbulb size={14} /> پیشنهادات هوشمند (AI Suggestions)
+              <h3 className="text-[10px] font-bold text-purple-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                <Lightbulb size={14} /> AI Suggestions
               </h3>
               <div className="space-y-3">
                 {suggestions.map(task => (
@@ -93,15 +93,15 @@ const RoadmapManager: React.FC<RoadmapManagerProps> = ({ tasks, onClose, onExecu
                     <div className="flex items-center gap-3">
                       <Zap className="text-purple-500 flex-shrink-0" size={16} />
                       <div>
-                        <div className="text-zinc-200 text-sm font-vazir font-bold">{task.title}</div>
-                        {task.description && <div className="text-[10px] text-zinc-500 mt-0.5 font-vazir">{task.description}</div>}
+                        <div className="text-zinc-200 text-sm font-bold">{task.title}</div>
+                        {task.description && <div className="text-[10px] text-zinc-500 mt-0.5">{task.description}</div>}
                       </div>
                     </div>
                     <button 
                       onClick={() => onExecuteTask(`Please implement this suggested feature: ${task.title}`)}
                       className="flex items-center gap-2 bg-purple-600 hover:bg-purple-500 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all active:scale-95"
                     >
-                      <Play size={12} fill="currentColor" /> <span className="font-vazir">اجرا</span>
+                      <Play size={12} fill="currentColor" /> <span>Execute</span>
                     </button>
                   </div>
                 ))}
@@ -111,18 +111,18 @@ const RoadmapManager: React.FC<RoadmapManagerProps> = ({ tasks, onClose, onExecu
 
           {/* Completed Tasks */}
           <section>
-            <h3 className="text-[10px] font-bold text-green-500 uppercase tracking-widest mb-4 flex items-center gap-2 font-vazir">
-              <CheckCircle2 size={14} /> کارهای انجام شده
+            <h3 className="text-[10px] font-bold text-green-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+              <CheckCircle2 size={14} /> Completed Tasks
             </h3>
             <div className="space-y-2 opacity-60">
               {completedTasks.map(task => (
                 <div key={task.id} className="bg-zinc-900 border border-zinc-800 p-3 rounded-xl flex items-center gap-3">
                   <CheckCircle2 className="text-green-500 flex-shrink-0" size={16} />
-                  <span className="text-zinc-400 text-xs font-vazir line-through">{task.title}</span>
+                  <span className="text-zinc-400 text-xs line-through">{task.title}</span>
                 </div>
               ))}
               {completedTasks.length === 0 && (
-                <div className="text-center py-6 text-zinc-600 text-xs font-vazir italic">هنوز تسکی تکمیل نشده است.</div>
+                <div className="text-center py-6 text-zinc-600 text-xs italic">No tasks completed yet.</div>
               )}
             </div>
           </section>
@@ -132,9 +132,9 @@ const RoadmapManager: React.FC<RoadmapManagerProps> = ({ tasks, onClose, onExecu
         <div className="p-6 border-t border-zinc-800 bg-zinc-900/50 flex justify-end">
           <button 
             onClick={onClose}
-            className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-8 py-3 rounded-xl font-bold transition-all text-xs font-vazir"
+            className="bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-8 py-3 rounded-xl font-bold transition-all text-xs"
           >
-            بستن نقشه راه
+            Close Roadmap
           </button>
         </div>
       </div>

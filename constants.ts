@@ -6,14 +6,14 @@ export const DEFAULT_FILES: FileEntry[] = [
     name: 'README.md',
     path: 'README.md',
     type: 'file',
-    content: `# معمار پلاگین ابسیدین (Obsidian Plugin Architect)
+    content: `# Obsidian Plugin Architect
 
-این یک محیط توسعه یکپارچه (IDE) هوشمند برای ساخت پلاگین‌های اختصاصی ابسیدین است.
+This is an intelligent Integrated Development Environment (IDE) for building custom Obsidian plugins.
 
-## نحوه بیلد در محیط محلی
-1. فایل‌های پروژه را در پوشه پلاگین ابسیدین خود کپی کنید.
-2. دستور \`npm install\` را اجرا کنید.
-3. برای تولید فایل نهایی، دستور \`npm run build\` را بزنید.
+## How to build locally
+1. Copy project files into your Obsidian plugin folder.
+2. Run \`npm install\` command.
+3. To generate the final bundle, run \`npm run build\`.
 `
   },
   {

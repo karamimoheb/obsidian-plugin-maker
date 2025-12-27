@@ -10,6 +10,16 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  
+  <!-- PrismJS for Syntax Highlighting -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" id="prism-theme">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-javascript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-markdown.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-css.min.js"></script>
+
   <script>
     tailwind.config = {
       darkMode: 'class',
@@ -109,39 +119,87 @@
       color: #93c5fd;
     }
 
-    /* Callout Styles */
-    .callout {
-      margin: 1.5rem 0;
-      padding: 1rem 1.25rem;
-      border-radius: 10px;
-      border-right: 4px solid;
-      background: rgba(128, 128, 128, 0.05);
+    /* Editor Specific Styles */
+    .editor-container {
+      position: relative;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 14px;
+      line-height: 1.5;
+      height: 100%;
+      width: 100%;
     }
-    .callout-title {
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin-bottom: 0.5rem;
-      font-size: 0.95rem;
+    
+    .editor-textarea, .editor-highlight {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      padding: 1.5rem;
+      margin: 0;
+      border: 0;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+      line-height: 1.5;
+      white-space: pre;
+      overflow: auto;
+      tab-size: 2;
     }
-    .callout-info { border-color: #3b82f6; background: rgba(59, 130, 246, 0.05); color: #1d4ed8; }
-    .dark .callout-info { color: #93c5fd; background: rgba(59, 130, 246, 0.1); }
-    
-    .callout-warning { border-color: #f59e0b; background: rgba(245, 158, 11, 0.05); color: #b45309; }
-    .dark .callout-warning { color: #fcd34d; background: rgba(245, 158, 11, 0.1); }
-    
-    .callout-error { border-color: #ef4444; background: rgba(239, 68, 68, 0.05); color: #b91c1c; }
-    .dark .callout-error { color: #fca5a5; background: rgba(239, 68, 68, 0.1); }
-    
-    .callout-success { border-color: #10b981; background: rgba(16, 185, 129, 0.05); color: #047857; }
-    .dark .callout-success { color: #6ee7b7; background: rgba(16, 185, 129, 0.1); }
 
-    .prose-rtl ul, .prose-rtl ol {
-      margin: 1rem 0;
-      padding-right: 1.75rem;
+    .editor-textarea {
+      z-index: 1;
+      color: transparent;
+      background: transparent;
+      caret-color: #3b82f6;
+      resize: none;
+      outline: none;
     }
-    .prose-rtl li { margin-bottom: 0.5rem; }
+
+    .dark .editor-textarea {
+      caret-color: #60a5fa;
+    }
+
+    .editor-highlight {
+      z-index: 0;
+      pointer-events: none;
+      background: #fafafa;
+    }
+
+    .dark .editor-highlight {
+      background: #09090b;
+    }
+    
+    /* Prism override to fit our container */
+    pre[class*="language-"] {
+      background: transparent !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      font-family: inherit !important;
+    }
+    code[class*="language-"] {
+      background: transparent !important;
+      padding: 0 !important;
+      text-shadow: none !important;
+      font-family: inherit !important;
+    }
+
+    /* Prism Token Enhancements for High Visibility */
+    .token.comment { color: #71717a; font-style: italic; }
+    .token.keyword { color: #2563eb; font-weight: bold; }
+    .dark .token.keyword { color: #60a5fa; }
+    .token.string { color: #16a34a; }
+    .dark .token.string { color: #4ade80; }
+    .token.function { color: #9333ea; }
+    .dark .token.function { color: #c084fc; }
+    .token.number { color: #ea580c; }
+    .dark .token.number { color: #fb923c; }
+    .token.operator { color: #0891b2; }
+    .dark .token.operator { color: #22d3ee; }
+    .token.punctuation { color: #52525b; }
+    .dark .token.punctuation { color: #a1a1aa; }
+    .token.property { color: #be185d; }
+    .dark .token.property { color: #f472b6; }
+
   </style>
 <script type="importmap">
 {

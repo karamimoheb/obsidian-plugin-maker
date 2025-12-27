@@ -9,35 +9,56 @@ interface CodeEditorProps {
 }
 
 declare const marked: any;
+declare const Prism: any;
 
 const CodeEditor: React.FC<CodeEditorProps> = ({ content, onChange, fileName }) => {
   const [copied, setCopied] = useState(false);
   const isMarkdown = fileName.toLowerCase().endsWith('.md');
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>(isMarkdown ? 'preview' : 'edit');
+  
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const highlightRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+
+  // Determine language for Prism highlighting
+  const language = useMemo(() => {
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    switch (ext) {
+      case 'ts':
+      case 'tsx': return 'typescript';
+      case 'js':
+      case 'jsx':
+      case 'mjs': return 'javascript';
+      case 'json': return 'json';
+      case 'css':
+      case 'scss': return 'css';
+      case 'md': return 'markdown';
+      default: return 'clike';
+    }
+  }, [fileName]);
 
   useEffect(() => {
     setViewMode(isMarkdown ? 'preview' : 'edit');
   }, [fileName, isMarkdown]);
 
-  useEffect(() => {
-    if (viewMode === 'preview' && previewRef.current) {
-      const preBlocks = previewRef.current.querySelectorAll('pre');
-      preBlocks.forEach((pre) => {
-        if (pre.querySelector('.copy-btn')) return;
-        const btn = document.createElement('button');
-        btn.className = 'copy-btn absolute top-2 right-2 p-1.5 bg-zinc-800 text-zinc-400 rounded border border-zinc-700 text-[10px] font-bold opacity-0 group-hover:opacity-100 transition-opacity';
-        btn.innerText = 'Copy';
-        pre.classList.add('group', 'relative');
-        pre.appendChild(btn);
-        btn.onclick = () => {
-          navigator.clipboard.writeText(pre.innerText.replace('Copy', ''));
-          btn.innerText = 'Copied!';
-          setTimeout(() => btn.innerText = 'Copy', 2000);
-        };
-      });
+  // Sync scroll between textarea and highlighting layer
+  const handleScroll = (e: React.UIEvent<HTMLTextAreaElement>) => {
+    const { scrollTop, scrollLeft } = e.currentTarget;
+    if (highlightRef.current) {
+      highlightRef.current.scrollTop = scrollTop;
+      highlightRef.current.scrollLeft = scrollLeft;
     }
-  }, [viewMode, content]);
+  };
+
+  // Process highlighting
+  const highlightedCode = useMemo(() => {
+    if (typeof Prism === 'undefined' || !Prism.languages[language]) {
+      return content;
+    }
+    // Add a space at the end to ensure the last line/character is always visible if it's empty
+    const code = content + (content.endsWith('\n') ? ' ' : '');
+    return Prism.highlight(code, Prism.languages[language], language);
+  }, [content, language]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(content);
@@ -60,26 +81,26 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ content, onChange, fileName }) 
       <div className="h-14 bg-zinc-50 dark:bg-zinc-900/50 px-4 py-2 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-3 overflow-hidden">
           <FileCode size={16} className="text-blue-500 flex-shrink-0" />
-          <span className="text-[11px] font-mono font-bold text-zinc-500 truncate max-w-[120px] sm:max-w-none uppercase tracking-widest">
+          <span className="text-[11px] font-mono font-bold text-zinc-500 truncate max-w-[150px] sm:max-w-none uppercase tracking-widest">
             {fileName}
           </span>
 
-          {isMarkdown && (
-            <div className="flex bg-zinc-200 dark:bg-zinc-800 rounded-lg p-1">
+          <div className="flex bg-zinc-200 dark:bg-zinc-800 rounded-lg p-1 ml-2">
+            {isMarkdown && (
               <button 
                 onClick={() => setViewMode('preview')}
-                className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${viewMode === 'preview' ? 'bg-white dark:bg-zinc-700 shadow-sm text-blue-600 dark:text-blue-400' : 'text-zinc-500'}`}
+                className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${viewMode === 'preview' ? 'bg-white dark:bg-zinc-700 shadow-sm text-blue-600 dark:text-blue-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
               >
                 <Eye size={12} className="inline mr-1" /> View
               </button>
-              <button 
-                onClick={() => setViewMode('edit')}
-                className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${viewMode === 'edit' ? 'bg-white dark:bg-zinc-700 shadow-sm text-blue-600 dark:text-blue-400' : 'text-zinc-500'}`}
-              >
-                <Code size={12} className="inline mr-1" /> Edit
-              </button>
-            </div>
-          )}
+            )}
+            <button 
+              onClick={() => setViewMode('edit')}
+              className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${viewMode === 'edit' ? 'bg-white dark:bg-zinc-700 shadow-sm text-blue-600 dark:text-blue-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}`}
+            >
+              <Code size={12} className="inline mr-1" /> Editor
+            </button>
+          </div>
         </div>
 
         <button 
@@ -91,17 +112,34 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ content, onChange, fileName }) 
         </button>
       </div>
 
-      <div className="flex-1 relative">
+      <div className="flex-1 relative overflow-hidden bg-[#fafafa] dark:bg-[#09090b]">
         {viewMode === 'edit' ? (
-          <textarea
-            value={content}
-            onChange={(e) => onChange(e.target.value)}
-            spellCheck={false}
-            className="absolute inset-0 w-full h-full bg-transparent text-zinc-800 dark:text-zinc-200 p-4 sm:p-8 font-mono text-xs sm:text-sm leading-relaxed resize-none focus:outline-none overflow-auto custom-scrollbar"
-            style={{ tabSize: 2 }}
-          />
+          <div className="editor-container">
+            <div 
+              ref={highlightRef}
+              className="editor-highlight custom-scrollbar"
+              aria-hidden="true"
+            >
+              <pre className={`language-${language}`}>
+                <code 
+                  className={`language-${language}`}
+                  dangerouslySetInnerHTML={{ __html: highlightedCode }}
+                />
+              </pre>
+            </div>
+            <textarea
+              ref={textareaRef}
+              value={content}
+              onChange={(e) => onChange(e.target.value)}
+              onScroll={handleScroll}
+              spellCheck={false}
+              autoCapitalize="off"
+              autoComplete="off"
+              className="editor-textarea custom-scrollbar"
+            />
+          </div>
         ) : (
-          <div className="absolute inset-0 overflow-auto custom-scrollbar p-6 sm:p-10" ref={previewRef}>
+          <div className="absolute inset-0 overflow-auto custom-scrollbar p-6 sm:p-10 bg-white dark:bg-zinc-950" ref={previewRef}>
             <div className="max-w-4xl mx-auto prose-rtl" dangerouslySetInnerHTML={{ __html: renderedHtml }} />
           </div>
         )}
