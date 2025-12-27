@@ -25,21 +25,50 @@ MANAGEMENT RULES:
 `;
 
 const DEBUG_SYSTEM_INSTRUCTION = `
-You are the "Architect Debug Specialist." Your sole focus is identifying and fixing technical errors in Obsidian Plugins.
+You are the "Architect Debug Specialist." Your focus is identifying, fixing, and learning from technical errors.
 
 DEBUG PROTOCOL:
 1. ANALYZE: Parse the error log. Identify Type (Runtime, Build, Type, Config). Locate File/Line.
-2. RESEARCH: If the error involves specific Obsidian API versions or external dependencies, use Google Search to find modern solutions.
-3. CONTEXTUALIZE: Look at the provided files to see how the error manifests in the code.
-4. FIX: Generate MINIMAL, targeted changes to the specific files causing the error. Do not refactor unrelated code.
+2. RESEARCH: If the error is complex, use Google Search to find modern solutions.
+3. EXPERIENCE CHECK: Review "Resolved History" to see if this pattern has occurred before. 
+4. REGRESSION PREVENTION: Before finalizing a fix, ensure it doesn't break previous fixes or project logic.
+5. CONTEXTUALIZE: Look at current project files.
+6. FIX & LEARN: Generate MINIMAL changes. Record the root cause and final resolution.
 
 OUTPUT FORMAT:
 Return a JSON object with:
-- explanation: A concise summary of why the error happened.
-- chatMessage: A summary of the fix applied.
-- status: Set to 'resolved' if fixed.
-- files: Array of {path, content} for affected files.
-- tasks: Optional roadmap updates.
+- explanation: Concise summary of why it happened.
+- chatMessage: Summary of the fix.
+- status: 'resolved' if fixed.
+- errorType: 'runtime'|'build'|'type'|'config'.
+- rootCause: Deep technical reason.
+- resolution: Specific fix strategy.
+- affectedFilesPaths: Array of paths changed.
+- files: Array of {path, content}.
+`;
+
+const LEARNING_SYSTEM_INSTRUCTION = `
+You are in "Learning Mode" as the Obsidian Plugin Architect.
+Your mission is to analyze the provided source code and extract high-quality technical knowledge.
+
+CORE RULES:
+- Code-Grounded Only: Never guess.
+- Traceable: Link logic across files.
+- Deliverables: Generate LEARNING_NOTES.md and PLUGIN_RULES.md at the final step.
+
+STEP-SPECIFIC TASKS:
+1. Project Tree & Tech Stack: Identify core dependencies and overall structure.
+2. Entry Points: Find main.ts, plugin lifecycle methods (onload, onunload).
+3. Core Modules: Analyze the business logic and primary features.
+4. Integration Points: How does it talk to Obsidian API or external services?
+5. Quality Review: Note design patterns, best practices, and risks.
+6. Extraction: Consolidate everything into LEARNING_NOTES.md and PLUGIN_RULES.md.
+
+OUTPUT FORMAT:
+Return a JSON object:
+- resultMarkdown: A detailed markdown summary of this specific step's findings.
+- statusUpdate: Brief status text.
+- generatedFiles: ONLY for step 6, array of {path, content} for LEARNING_NOTES.md and PLUGIN_RULES.md.
 `;
 
 export async function processArchitectRequest(
@@ -142,13 +171,18 @@ export async function processArchitectRequest(
 export async function processDebugRequest(
   errorLog: string,
   currentFiles: FileEntry[],
+  resolvedIssues: ProjectIssue[] = [],
   modelName: string = 'gemini-3-pro-preview'
 ): Promise<any> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const fileContext = currentFiles.map(f => `Path: ${f.path}\nContent:\n${f.content}`).join('\n\n---\n\n');
+  const historyContext = resolvedIssues.length > 0 
+    ? `RESOLVED HISTORY (EXPERIENCE):\n${resolvedIssues.map(i => `- Type: ${i.errorType}, Root Cause: ${i.rootCause}, Fix: ${i.resolution}`).join('\n')}`
+    : "No resolved history yet.";
 
   const parts = [
     { text: `ERROR LOG TO FIX:\n${errorLog}` },
+    { text: historyContext },
     { text: `CURRENT PROJECT CODE:\n${fileContext}` }
   ];
 
@@ -162,6 +196,10 @@ export async function processDebugRequest(
           explanation: { type: Type.STRING },
           chatMessage: { type: Type.STRING },
           status: { type: Type.STRING },
+          errorType: { type: Type.STRING },
+          rootCause: { type: Type.STRING },
+          resolution: { type: Type.STRING },
+          affectedFilesPaths: { type: Type.ARRAY, items: { type: Type.STRING } },
           files: {
             type: Type.ARRAY,
             items: {
@@ -171,7 +209,7 @@ export async function processDebugRequest(
             }
           }
         },
-        required: ["explanation", "chatMessage", "files", "status"]
+        required: ["explanation", "chatMessage", "files", "status", "errorType", "rootCause", "resolution"]
       }
     };
 
@@ -189,6 +227,62 @@ export async function processDebugRequest(
     return JSON.parse(response.text || "{}");
   } catch (error: any) {
     console.error("Debug Analysis Failed", error);
+    throw error;
+  }
+}
+
+export async function processLearningStep(
+  stepIndex: number,
+  stepTitle: string,
+  currentFiles: FileEntry[],
+  previousFindings: string = "",
+  modelName: string = 'gemini-3-pro-preview'
+): Promise<any> {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const fileContext = currentFiles.map(f => `Path: ${f.path}\nContent:\n${f.content}`).join('\n\n---\n\n');
+
+  const parts = [
+    { text: `CURRENT STEP: ${stepIndex + 1}. ${stepTitle}` },
+    { text: `PREVIOUS FINDINGS:\n${previousFindings}` },
+    { text: `PROJECT SOURCE CODE:\n${fileContext}` }
+  ];
+
+  try {
+    const config: any = {
+      systemInstruction: LEARNING_SYSTEM_INSTRUCTION,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          resultMarkdown: { type: Type.STRING },
+          statusUpdate: { type: Type.STRING },
+          generatedFiles: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: { path: { type: Type.STRING }, content: { type: Type.STRING } },
+              required: ["path", "content"]
+            }
+          }
+        },
+        required: ["resultMarkdown", "statusUpdate"]
+      }
+    };
+
+    // Use higher budget for extraction
+    if (modelName.includes('pro')) {
+      config.thinkingConfig = { thinkingBudget: 16000 };
+    }
+
+    const response = await ai.models.generateContent({
+      model: modelName,
+      contents: { parts },
+      config: config
+    });
+    
+    return JSON.parse(response.text || "{}");
+  } catch (error: any) {
+    console.error("Learning Mode Step Failed", error);
     throw error;
   }
 }

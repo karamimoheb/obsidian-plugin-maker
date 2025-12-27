@@ -3,9 +3,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
   Send, Bot, User, Loader2, ChevronRight, Paperclip, X, 
   FileText, Sparkles, Cpu, Copy, Check, Eraser, Trash2, 
-  RotateCcw, Square, Pencil, RefreshCw, Ban
+  RotateCcw, Square, Pencil, RefreshCw, Ban, BrainCircuit
 } from 'lucide-react';
-import { ChatMessage, ChatAttachment, AIModelConfig } from '../types';
+import { ChatMessage, ChatAttachment, AIModelConfig, LearningSession } from '../types';
 
 interface ChatPanelProps {
   history: ChatMessage[];
@@ -18,6 +18,8 @@ interface ChatPanelProps {
   onModelChange: (modelId: string) => void;
   onToggleCollapse: () => void;
   onEditMessage: (index: number, newContent: string) => void;
+  learningSession?: LearningSession;
+  onToggleLearningMode?: () => void;
 }
 
 const ChatPanel: React.FC<ChatPanelProps> = ({ 
@@ -30,7 +32,9 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   availableModels = [],
   onModelChange, 
   onToggleCollapse,
-  onEditMessage
+  onEditMessage,
+  learningSession,
+  onToggleLearningMode
 }) => {
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
@@ -134,45 +138,63 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   return (
     <div className="flex flex-col h-full bg-inherit w-full transition-colors duration-300">
       {/* Header */}
-      <div className="p-3 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-zinc-50 dark:bg-zinc-900 shadow-sm">
-        <div className="flex items-center gap-2">
-          <button onClick={onToggleCollapse} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded text-zinc-500 transition-colors">
-            <ChevronRight size={14} />
-          </button>
-          <Bot size={16} className="text-blue-500" />
-          <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Architect</span>
-        </div>
-        
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 bg-zinc-200/50 dark:bg-zinc-800/50 p-1 rounded-lg">
-            <button 
-              onClick={handleClearUI} 
-              className="p-1.5 hover:bg-white dark:hover:bg-zinc-700 rounded-md text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-all"
-              title="Clear UI (Keep Memory)"
-            >
-              <Eraser size={14} />
+      <div className="p-3 border-b border-zinc-200 dark:border-zinc-800 flex flex-col gap-2 bg-zinc-50 dark:bg-zinc-900 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <button onClick={onToggleCollapse} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded text-zinc-500 transition-colors">
+              <ChevronRight size={14} />
             </button>
-            <button 
-              onClick={handleResetMemory} 
-              className="p-1.5 hover:bg-red-500/10 rounded-md text-zinc-500 hover:text-red-500 transition-all"
-              title="Reset Memory (Clear History)"
-            >
-              <RotateCcw size={14} />
-            </button>
+            <Bot size={16} className="text-blue-500" />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Architect</span>
           </div>
+          
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 bg-zinc-200/50 dark:bg-zinc-800/50 p-1 rounded-lg">
+              <button 
+                onClick={handleClearUI} 
+                className="p-1.5 hover:bg-white dark:hover:bg-zinc-700 rounded-md text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-all"
+                title="Clear UI (Keep Memory)"
+              >
+                <Eraser size={14} />
+              </button>
+              <button 
+                onClick={handleResetMemory} 
+                className="p-1.5 hover:bg-red-500/10 rounded-md text-zinc-500 hover:text-red-500 transition-all"
+                title="Reset Memory (Clear History)"
+              >
+                <RotateCcw size={14} />
+              </button>
+            </div>
 
-          <div className="flex items-center gap-1.5">
-            <select 
-              value={selectedModelId}
-              onChange={(e) => onModelChange(e.target.value)}
-              className="bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-md text-[10px] font-bold px-2 py-1 text-zinc-700 dark:text-zinc-300 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-colors"
-            >
-              {availableModels.map(m => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
+            <div className="flex items-center gap-1.5">
+              <select 
+                value={selectedModelId}
+                onChange={(e) => onModelChange(e.target.value)}
+                className="bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-md text-[10px] font-bold px-2 py-1 text-zinc-700 dark:text-zinc-300 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-colors"
+              >
+                {availableModels.map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
+
+        {/* Learning Mode Button */}
+        {onToggleLearningMode && (
+          <button 
+            onClick={onToggleLearningMode}
+            className={`flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${
+              learningSession?.isActive 
+                ? 'bg-blue-600/10 border border-blue-500/30 text-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.1)]' 
+                : 'bg-zinc-200 dark:bg-zinc-800 border border-transparent text-zinc-500 hover:border-blue-500/30 hover:text-blue-500'
+            }`}
+          >
+            <BrainCircuit size={14} className={learningSession?.isActive ? 'animate-pulse' : ''} />
+            Learning Mode
+            {learningSession?.isActive && <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-ping" />}
+          </button>
+        )}
       </div>
 
       {/* Chat Area */}

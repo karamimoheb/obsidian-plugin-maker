@@ -36,6 +36,11 @@ export interface ProjectIssue {
   status: 'open' | 'analyzing' | 'researching' | 'fixing' | 'resolved';
   timestamp: number;
   analysis?: string;
+  // Learning & Knowledge Base fields
+  errorType?: 'runtime' | 'build' | 'type' | 'config';
+  rootCause?: string;
+  resolution?: string;
+  affectedFiles?: string[];
 }
 
 export interface ProjectTask {
@@ -43,6 +48,33 @@ export interface ProjectTask {
   title: string;
   status: 'todo' | 'completed' | 'suggestion';
   description?: string;
+}
+
+export type LearningStepStatus = 'pending' | 'active' | 'completed' | 'error';
+
+export interface LearningStep {
+  id: string; // Changed to string for flexibility like "step-1"
+  title: string;
+  status: LearningStepStatus;
+  description: string;
+  result?: string;
+  errorMessage?: string;
+}
+
+export interface LearningSession {
+  sessionId?: string;
+  pluginId?: string;
+  isActive: boolean;
+  currentStep: number;
+  steps: LearningStep[];
+  isPaused: boolean;
+  isZipImported: boolean;
+  outputs?: {
+    learningNotesUrl?: string;
+    pluginRulesUrl?: string;
+    learningNotesContent?: string;
+    pluginRulesContent?: string;
+  };
 }
 
 export interface ProjectState {
@@ -57,6 +89,7 @@ export interface ProjectState {
   lastSyncTime?: number;
   issues?: ProjectIssue[];
   tasks?: ProjectTask[];
+  learningSession?: LearningSession;
 }
 
 export interface ProjectSnapshot {

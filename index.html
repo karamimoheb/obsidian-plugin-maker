@@ -5,13 +5,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Obsidian Plugin Architect IDE</title>
-  <!-- Security Policy to allow File System Access in iframes if possible -->
   <meta http-equiv="Permissions-Policy" content="file-system=(self)">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   
-  <!-- PrismJS for Syntax Highlighting -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" id="prism-theme">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-typescript.min.js"></script>
@@ -28,9 +26,6 @@
           fontFamily: {
             mono: ['JetBrains Mono', 'Fira Code', 'Menlo', 'monospace'],
             vazir: ['Vazirmatn', 'sans-serif'],
-          },
-          screens: {
-            'xs': '480px',
           }
         }
       }
@@ -39,192 +34,37 @@
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Vazirmatn:wght@300;400;700&display=swap');
     
-    body {
-      font-family: 'Inter', sans-serif;
-    }
+    body { font-family: 'Inter', sans-serif; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(128, 128, 128, 0.2); border-radius: 10px; }
+    .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); }
 
-    .custom-scrollbar::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-    .custom-scrollbar::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    .custom-scrollbar::-webkit-scrollbar-thumb {
-      background: rgba(128, 128, 128, 0.2);
-      border-radius: 10px;
-    }
-    .dark .custom-scrollbar::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.1);
-    }
-
-    /* Modern Markdown Styles with RTL support */
-    .prose-rtl {
-      direction: rtl;
-      text-align: right;
-      font-family: 'Vazirmatn', sans-serif;
-      font-weight: 400;
-      color: #3f3f46; /* text-zinc-700 */
-    }
-    .dark .prose-rtl {
-      color: #e4e4e7; /* text-zinc-200 */
-    }
-
-    /* Standard LTR styling for English content */
-    .prose-ltr {
-      direction: ltr;
-      text-align: left;
-      font-family: 'Inter', sans-serif;
-      font-weight: 400;
-      color: #3f3f46;
-    }
-    .dark .prose-ltr {
-      color: #e4e4e7;
-    }
+    .prose-rtl { direction: rtl; text-align: right; font-family: 'Vazirmatn', sans-serif; color: #3f3f46; }
+    .dark .prose-rtl { color: #e4e4e7; }
+    .prose-ltr { direction: ltr; text-align: left; font-family: 'Inter', sans-serif; color: #3f3f46; }
+    .dark .prose-ltr { color: #e4e4e7; }
+    .prose-rtl h1, .prose-ltr h1 { font-size: 1.5rem; color: #2563eb; margin: 1.5rem 0; }
+    .dark .prose-rtl h1, .dark .prose-ltr h1 { color: #60a5fa; }
     
-    .prose-rtl h1, .prose-rtl h2, .prose-rtl h3, .prose-rtl h4,
-    .prose-ltr h1, .prose-ltr h2, .prose-ltr h3, .prose-ltr h4 {
-      font-weight: 700;
-      margin-top: 2rem;
-      margin-bottom: 1rem;
-      color: #2563eb; /* blue-600 */
-    }
-    .dark .prose-rtl h1, .dark .prose-rtl h2, .dark .prose-rtl h3, .dark .prose-rtl h4,
-    .dark .prose-ltr h1, .dark .prose-ltr h2, .dark .prose-ltr h3, .dark .prose-ltr h4 {
-      color: #60a5fa; /* blue-400 */
-    }
-    
-    .prose-rtl p, .prose-ltr p {
-      margin-bottom: 1.25rem;
-      line-height: 1.8;
-    }
-    
-    /* Code blocks - Always LTR */
-    .prose-rtl pre, .prose-ltr pre {
-      direction: ltr !important;
-      text-align: left !important;
-      background: #f4f4f5;
-      color: #18181b;
-      padding: 1.25rem;
-      border-radius: 12px;
-      overflow-x: auto;
-      margin: 1.5rem 0;
-      border: 1px solid rgba(0,0,0,0.05);
-      font-size: 0.85rem;
-    }
-    .dark .prose-rtl pre, .dark .prose-ltr pre {
-      background: #09090b;
-      color: #e4e4e7;
-      border-color: rgba(255,255,255,0.05);
-    }
-    
-    .prose-rtl code, .prose-ltr code {
-      direction: ltr !important;
-      text-align: left !important;
-      font-family: 'JetBrains Mono', monospace;
-      background: rgba(59, 130, 246, 0.1);
-      color: #2563eb;
-      padding: 0.15rem 0.4rem;
-      border-radius: 6px;
-      font-size: 0.9em;
-      font-weight: 500;
-    }
-    .dark .prose-rtl code, .dark .prose-ltr code {
-      background: rgba(59, 130, 246, 0.2);
-      color: #93c5fd;
-    }
-
-    /* Editor Specific Styles */
-    .editor-container {
-      position: relative;
-      font-family: 'JetBrains Mono', 'Fira Code', monospace;
-      font-size: 14px;
-      line-height: 1.5;
-      height: 100%;
-      width: 100%;
-    }
-    
+    .editor-container { position: relative; height: 100%; width: 100%; }
     .editor-textarea, .editor-highlight {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      padding: 1.5rem;
-      margin: 0;
-      border: 0;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 14px;
-      line-height: 1.5;
-      white-space: pre;
-      overflow: auto;
-      tab-size: 2;
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      padding: 1.5rem; font-family: 'JetBrains Mono', monospace;
+      font-size: 14px; line-height: 1.5; white-space: pre; overflow: auto;
     }
-
-    .editor-textarea {
-      z-index: 1;
-      color: transparent;
-      background: transparent;
-      caret-color: #3b82f6;
-      resize: none;
-      outline: none;
-      direction: ltr !important; /* Force Editor to always be LTR */
-      text-align: left !important;
-    }
-
-    .dark .editor-textarea {
-      caret-color: #60a5fa;
-    }
-
-    .editor-highlight {
-      z-index: 0;
-      pointer-events: none;
-      background: #fafafa;
-    }
-
-    .dark .editor-highlight {
-      background: #09090b;
-    }
-    
-    /* Prism override to fit our container */
-    pre[class*="language-"] {
-      background: transparent !important;
-      padding: 0 !important;
-      margin: 0 !important;
-      font-family: inherit !important;
-    }
-    code[class*="language-"] {
-      background: transparent !important;
-      padding: 0 !important;
-      text-shadow: none !important;
-      font-family: inherit !important;
-    }
-
-    /* Prism Token Enhancements for High Visibility */
-    .token.comment { color: #71717a; font-style: italic; }
-    .token.keyword { color: #2563eb; font-weight: bold; }
-    .dark .token.keyword { color: #60a5fa; }
-    .token.string { color: #16a34a; }
-    .dark .token.string { color: #4ade80; }
-    .token.function { color: #9333ea; }
-    .dark .token.function { color: #c084fc; }
-    .token.number { color: #ea580c; }
-    .dark .token.number { color: #fb923c; }
-    .token.operator { color: #0891b2; }
-    .dark .token.operator { color: #22d3ee; }
-    .token.punctuation { color: #52525b; }
-    .dark .token.punctuation { color: #a1a1aa; }
-    .token.property { color: #be185d; }
-    .dark .token.property { color: #f472b6; }
-
+    .editor-textarea { z-index: 1; color: transparent; background: transparent; caret-color: #3b82f6; resize: none; outline: none; }
+    .editor-highlight { z-index: 0; pointer-events: none; }
   </style>
 <script type="importmap">
 {
   "imports": {
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "@google/genai": "https://esm.sh/@google/genai@^1.34.0",
+    "lucide-react": "https://esm.sh/lucide-react@0.460.0?external=react",
+    "@google/genai": "https://esm.sh/@google/genai@1.34.0",
+    "react": "https://esm.sh/react@19.0.0",
+    "react-dom": "https://esm.sh/react-dom@19.0.0",
+    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
     "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
   }
 }
@@ -233,6 +73,7 @@
 </head>
 <body class="bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 overflow-hidden transition-colors duration-300">
   <div id="root"></div>
-  <script type="module" src="/index.tsx"></script>
+  <script type="module" src="index.tsx"></script>
+<script type="module" src="/index.tsx"></script>
 </body>
 </html>

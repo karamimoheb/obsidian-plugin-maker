@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   Folder, 
   File, 
@@ -14,8 +14,8 @@ import {
   FileText, 
   Zap, 
   ShieldAlert,
-  Layers,
-  Eraser
+  Eraser,
+  Upload
 } from 'lucide-react';
 import { FileEntry } from '../types';
 
@@ -30,7 +30,10 @@ interface FileTreeProps {
   onToggleCollapse: () => void;
   onAddFile: (name: string) => void;
   onDeleteFile: (path: string) => void;
+  onImportZip: (files: FileEntry[]) => void;
 }
+
+declare const JSZip: any;
 
 const FileTree: React.FC<FileTreeProps> = ({ 
   files, 
@@ -42,10 +45,12 @@ const FileTree: React.FC<FileTreeProps> = ({
   onDownload,
   onToggleCollapse,
   onAddFile,
-  onDeleteFile
+  onDeleteFile,
+  onImportZip
 }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [newFileName, setNewFileName] = useState('');
+  const zipInputRef = useRef<HTMLInputElement>(null);
 
   const handleAdd = (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,6 +58,40 @@ const FileTree: React.FC<FileTreeProps> = ({
       onAddFile(newFileName.trim());
       setNewFileName('');
       setIsAdding(false);
+    }
+  };
+
+  const handleZipUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || typeof JSZip === 'undefined') return;
+
+    try {
+      const zip = new JSZip();
+      const content = await zip.loadAsync(file);
+      const importedFiles: FileEntry[] = [];
+
+      for (const [path, zipFile] of Object.entries(content.files)) {
+        // Fix: Cast zipFile to any to allow access to JSZip entry properties (dir, async)
+        const entry = zipFile as any;
+        if (!entry.dir) {
+          const fileContent = await entry.async('string');
+          importedFiles.push({
+            name: path.split('/').pop() || path,
+            path: path,
+            type: 'file',
+            content: fileContent
+          });
+        }
+      }
+
+      if (importedFiles.length > 0) {
+        onImportZip(importedFiles);
+      }
+    } catch (err) {
+      console.error("ZIP import failed", err);
+      alert("Failed to import ZIP file.");
+    } finally {
+      if (zipInputRef.current) zipInputRef.current.value = '';
     }
   };
 
@@ -112,16 +151,13 @@ const FileTree: React.FC<FileTreeProps> = ({
           <span>New File</span>
         </button>
         <div className="w-px h-3 bg-zinc-200 dark:bg-zinc-800 mx-1" />
+        <input type="file" ref={zipInputRef} onChange={handleZipUpload} accept=".zip" className="hidden" />
         <button 
-          onClick={() => {
-            if(confirm('Do you want to clear old and unnecessary files?')) {
-              alert('This feature will be integrated with AI in future versions.');
-            }
-          }}
-          className="flex items-center gap-1.5 px-2 py-1 hover:bg-red-500/10 hover:text-red-500 rounded text-[10px] font-bold text-zinc-600 dark:text-zinc-400 transition-colors uppercase tracking-tighter"
+          onClick={() => zipInputRef.current?.click()}
+          className="flex items-center gap-1.5 px-2 py-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded text-[10px] font-bold text-zinc-600 dark:text-zinc-400 transition-colors uppercase tracking-tighter"
         >
-          <Eraser size={14} />
-          <span>Cleanup</span>
+          <Upload size={14} className="text-purple-500" />
+          <span>Import ZIP</span>
         </button>
       </div>
       
@@ -198,10 +234,6 @@ const FileTree: React.FC<FileTreeProps> = ({
           <Package size={14} />
           Download ZIP
         </button>
-        
-        <p className="text-[9px] text-zinc-400 dark:text-zinc-600 text-center px-2 leading-relaxed pt-1 opacity-70">
-          {isSynced ? 'Changes are saved in real-time.' : 'For manual installation in Obsidian.'}
-        </p>
       </div>
     </div>
   );
