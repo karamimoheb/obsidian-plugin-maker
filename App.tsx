@@ -10,8 +10,9 @@ import { ProjectState, FileEntry, ChatMessage, ChatAttachment, AIModelConfig, Pr
 import { DEFAULT_FILES } from './constants';
 import { processArchitectRequest } from './services/gemini';
 import { saveProject, loadProject, saveSnapshot, getSnapshots, deleteSnapshot, saveIssue, getIssues, deleteIssue } from './services/db';
-import { Sun, Moon, PanelLeft, PanelRight, Loader2, Menu, MessageSquare, FolderSync, AlertCircle, X, History, Bug, ClipboardList, ShieldAlert } from 'lucide-react';
+import { Sun, Moon, PanelLeft, PanelRight, Loader2, Menu, MessageSquare, FolderSync, AlertCircle, X, History, Bug, ClipboardList, ShieldAlert, Download } from 'lucide-react';
 
+// Accessing JSZip from the script tag in index.html
 declare const JSZip: any;
 
 const PREDEFINED_MODELS: AIModelConfig[] = [
@@ -82,7 +83,15 @@ const App: React.FC = () => {
     try {
       for (const file of files) {
         if (file.type === 'file') {
-          const fileHandle = await directoryHandle.getFileHandle(file.path, { create: true });
+          const pathParts = file.path.split('/');
+          let currentDir = directoryHandle;
+          
+          for (let i = 0; i < pathParts.length - 1; i++) {
+            currentDir = await currentDir.getDirectoryHandle(pathParts[i], { create: true });
+          }
+          
+          const fileName = pathParts[pathParts.length - 1];
+          const fileHandle = await currentDir.getFileHandle(fileName, { create: true });
           const writable = await fileHandle.createWritable();
           await writable.write(file.content);
           await writable.close();
@@ -91,11 +100,72 @@ const App: React.FC = () => {
       setProject(p => ({ ...p, lastSyncTime: Date.now() }));
     } catch (e: any) {
       console.error("Sync error:", e);
-      setErrorMessage("خطا در همگام‌سازی: " + e.message);
+      setErrorMessage("خطا در ذخیره‌سازی فایل: " + e.message);
     }
   }, [directoryHandle]);
 
-  // AUTO-GENERATING TASK REPORT
+  const handleDownloadZip = async () => {
+    try {
+      if (typeof JSZip === 'undefined') {
+        setErrorMessage("کتابخانه JSZip یافت نشد. لطفاً صفحه را مجدداً بارگذاری کنید.");
+        return;
+      }
+
+      const zip = new JSZip();
+      project.files.forEach(file => {
+        if (file.type === 'file') {
+          zip.file(file.path, file.content);
+        }
+      });
+
+      const manifestFile = project.files.find(f => f.path === 'manifest.json');
+      let zipName = 'obsidian-plugin-project.zip';
+      if (manifestFile) {
+        try {
+          const manifest = JSON.parse(manifestFile.content);
+          if (manifest.id) zipName = `${manifest.id}-architect.zip`;
+        } catch(e) {}
+      }
+
+      const content = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(content);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = zipName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setErrorMessage("خطا در تولید فایل ZIP: " + e.message);
+    }
+  };
+
+  const handleSyncLocal = async () => {
+    try {
+      if (!('showDirectoryPicker' in window)) {
+        setErrorMessage("مرورگر شما از دسترسی مستقیم به فایل‌ها پشتیبانی نمی‌کند. از دکمه Download ZIP استفاده کنید.");
+        return;
+      }
+      
+      const h = await (window as any).showDirectoryPicker({
+        mode: 'readwrite'
+      });
+      setDirectoryHandle(h);
+      setProject(p => ({ ...p, isSynced: true }));
+      await syncToLocal(project.files);
+    } catch (e: any) {
+      if (e.name === 'AbortError') return;
+      
+      if (e.message.includes('sub frames') || e.name === 'SecurityError') {
+        setErrorMessage("محدودیت امنیتی مرورگر: دسترسی مستقیم به پوشه در این محیط (Iframe) مسدود است. لطفاً از دکمه Download ZIP برای دریافت فایل‌ها استفاده کنید.");
+      } else {
+        setErrorMessage("خطا در دسترسی به پوشه: " + e.message);
+      }
+      console.error("Directory picker failure:", e);
+    }
+  };
+
   useEffect(() => {
     if (!project.tasks || project.tasks.length === 0 || isInitialLoad) return;
 
@@ -111,16 +181,17 @@ const App: React.FC = () => {
 ${completed.length > 0 ? completed.map(t => `- [x] **${t.title}**${t.description ? `\n  - *${t.description}*` : ''}`).join('\n') : '*هنوز موردی تکمیل نشده است.*'}
 
 ## ⏳ کارهای باقی‌مانده (Todo - ${todos.length})
-${todos.length > 0 ? todos.map(t => `- [ ] **${t.title}**${t.description ? `\n  - *${t.description}*` : ''}\n  - > برای اجرا: دکمه Execute در پنل Roadmap را بزنید.`).join('\n') : '*لیست تسک‌های باقی‌مانده خالی است.*'}
+${todos.length > 0 ? todos.map(t => `- [ ] **${t.title}**${t.description ? `\n  - *${t.description}*` : ''}`).join('\n') : '*لیست تسک‌های باقی‌مانده خالی است.*'}
 
 ## 💡 پیشنهادات هوشمند (${suggestions.length})
 ${suggestions.length > 0 ? suggestions.map(t => `- [ ] *${t.title}*${t.description ? `\n  - ${t.description}` : ''}`).join('\n') : '*در حال حاضر پیشنهادی وجود ندارد.*'}
 
 ---
-### 🛠 راهنمای توسعه
-1. برای رفع خطاها، لاگ کنسول را در **Debug Console** وارد کنید.
-2. برای بازگشت به عقب از **History** استفاده کنید.
-3. برای شروع هر تسک پیشنهادی، از دکمه **Execute** در پنل **Roadmap** استفاده کنید.
+### 🛠 نکته مهم برای بیلد محلی
+اگر در استفاده از دکمه **Sync Local Folder** با خطای امنیتی مواجه شدید، به دلیل محدودیت مرورگر در محیط‌های ایزوله است. در این صورت:
+1. دکمه **Download ZIP** را بزنید.
+2. فایل را در سیستم خود استخراج کنید.
+3. در آن پوشه دستورات \`npm install\` و \`npm run build\` را اجرا کنید.
 
 ---
 *تولید شده توسط "معمار پلاگین ابسیدین"*
@@ -191,7 +262,6 @@ ${suggestions.length > 0 ? suggestions.map(t => `- [ ] *${t.title}*${t.descripti
     else { setRightPanelVisible(true); setTimeout(() => handleSendMessage(taskTitle, []), 300); }
   };
 
-  // ... rest of handlers (Restore, Delete, etc.) remain same as before but ensured they are available
   const handleCreateSnapshot = async (name: string) => {
     const snapshot: ProjectSnapshot = {
       id: Math.random().toString(36).substring(2, 11),
@@ -231,10 +301,32 @@ ${suggestions.length > 0 ? suggestions.map(t => `- [ ] *${t.title}*${t.descripti
       {showDebugConsole && <DebugConsole issues={issues} onClose={() => setShowDebugConsole(false)} onAddIssue={async (log) => { const n = { id: Math.random().toString(36).substring(2,11), errorLog: log, status: 'open' as const, timestamp: Date.now() }; await saveIssue(n); setIssues(p => [...p, n]); }} onUpdateStatus={(id, s) => { const up = issues.map(i => i.id === id ? {...i, status: s} : i); setIssues(up); saveIssue(up.find(x => x.id === id)!) }} onDeleteIssue={(id) => deleteIssue(id).then(() => setIssues(s => s.filter(x => x.id !== id)))} />}
       {showRoadmap && <RoadmapManager tasks={project.tasks || []} onClose={() => setShowRoadmap(false)} onExecuteTask={handleExecuteRoadmapTask} />}
 
-      {errorMessage && <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] bg-red-600 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-top-4 duration-300 font-vazir text-xs"><AlertCircle size={18} /><p className="flex-1">{errorMessage}</p><button onClick={() => setErrorMessage(null)}><X size={16} /></button></div>}
+      {errorMessage && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] w-[90%] max-w-lg bg-red-600 text-white p-4 rounded-2xl shadow-2xl flex items-start gap-3 animate-in fade-in slide-in-from-top-4 duration-300 font-vazir text-xs leading-relaxed border border-red-400/30">
+          <AlertCircle size={20} className="mt-0.5 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="font-bold mb-1">خطای سیستم:</p>
+            <p>{errorMessage}</p>
+          </div>
+          <button onClick={() => setErrorMessage(null)} className="p-1 hover:bg-white/10 rounded-full transition-colors flex-shrink-0">
+            <X size={18} />
+          </button>
+        </div>
+      )}
 
       <aside style={{ width: leftPanelVisible ? (window.innerWidth < 1024 ? '85vw' : `${leftPanelWidth}px`) : '0px' }} className="fixed lg:relative inset-y-0 left-0 z-50 flex-shrink-0 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 transition-all duration-300 overflow-hidden">
-        <FileTree files={project.files} activeFile={project.activeFilePath} changedFilePaths={project.changedFilePaths || []} isSynced={project.isSynced} onSelect={(path) => { setProject(p => ({ ...p, activeFilePath: path })); if (window.innerWidth < 1024) setLeftPanelVisible(false); }} onSync={async () => { try { const h = await (window as any).showDirectoryPicker(); setDirectoryHandle(h); setProject(p => ({ ...p, isSynced: true })); syncToLocal(project.files); } catch(e:any) { setErrorMessage(e.message); } }} onDownload={() => { /* zip logic */ }} onToggleCollapse={() => setLeftPanelVisible(false)} onAddFile={(name) => setProject(p => ({ ...p, files: [...p.files, { name, path: name, content: '', type: 'file' }], activeFilePath: name }))} onDeleteFile={(path) => setProject(p => ({ ...p, files: p.files.filter(f => f.path !== path), activeFilePath: p.activeFilePath === path ? 'README.md' : p.activeFilePath }))} />
+        <FileTree 
+          files={project.files} 
+          activeFile={project.activeFilePath} 
+          changedFilePaths={project.changedFilePaths || []} 
+          isSynced={project.isSynced} 
+          onSelect={(path) => { setProject(p => ({ ...p, activeFilePath: path })); if (window.innerWidth < 1024) setLeftPanelVisible(false); }} 
+          onSync={handleSyncLocal}
+          onDownload={handleDownloadZip}
+          onToggleCollapse={() => setLeftPanelVisible(false)} 
+          onAddFile={(name) => setProject(p => ({ ...p, files: [...p.files, { name, path: name, content: '', type: 'file' }], activeFilePath: name }))} 
+          onDeleteFile={(path) => setProject(p => ({ ...p, files: p.files.filter(f => f.path !== path), activeFilePath: p.activeFilePath === path ? 'README.md' : p.activeFilePath }))} 
+        />
       </aside>
 
       <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-zinc-950 relative z-10 transition-all">

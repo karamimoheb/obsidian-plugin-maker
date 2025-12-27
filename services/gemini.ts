@@ -9,11 +9,13 @@ Your role is to help the user build, modify, and optimize professional Obsidian 
 MANAGEMENT RULES:
 1. Address ACTIVE ISSUES/ERRORS first.
 2. Maintain a PROJECT ROADMAP. You must return an updated list of tasks.
-3. Classify tasks into: 
+3. INFRASTRUCTURE: Always ensure 'package.json', 'tsconfig.json', and 'esbuild.config.mjs' are present and correctly configured with build scripts.
+4. If the user reports a "Missing script" error, fix the 'package.json' file.
+5. Classify tasks into: 
    - "completed": Features already implemented in the code.
    - "todo": Features requested but not yet finished.
    - "suggestion": Smart improvements or advanced features the user might want next.
-4. If the user asks for an "Audit", review the existing code for bugs, performance leaks (especially in onunload), and Obsidian API best practices.
+6. If the user asks for an "Audit", review the existing code for bugs, performance leaks (especially in onunload), and Obsidian API best practices.
 
 Output MUST be valid JSON:
 1. "explanation": Technical summary.
@@ -90,7 +92,6 @@ export async function processArchitectRequest(
       }
     };
 
-    // Enable Google Search for Pro models to stay updated with Obsidian API
     if (modelName.includes('pro')) {
       config.tools = [{ googleSearch: {} }];
       config.thinkingConfig = { thinkingBudget: modelName.includes('2.5') ? 32768 : 16000 };
