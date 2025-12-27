@@ -66,6 +66,9 @@ const App: React.FC = () => {
   const [snapshots, setSnapshots] = useState<ProjectSnapshot[]>([]);
   const [issues, setIssues] = useState<ProjectIssue[]>([]);
 
+  // JSZip global availability check
+  const getJSZip = () => (window as any).JSZip;
+
   useEffect(() => {
     const init = async () => {
       try {
@@ -106,12 +109,13 @@ const App: React.FC = () => {
     }));
   };
 
-  const executeLearningLoop = async (stepIdx: number) => {
+  const executeLearningLoop = async (stepIdx: number, currentProjectState: ProjectState) => {
     if (stepIdx >= INITIAL_LEARNING_STEPS.length) {
       setProject(prev => ({ ...prev, learningSession: { ...prev.learningSession!, isActive: false } }));
       return;
     }
 
+    // Mark current step as active
     setProject(prev => ({
       ...prev,
       learningSession: {
@@ -123,35 +127,54 @@ const App: React.FC = () => {
 
     setIsProcessing(true);
     try {
-      const activeModel = PREDEFINED_MODELS.find(m => m.id === project.selectedModelId) || PREDEFINED_MODELS[0];
-      const previousFindings = project.learningSession!.steps.slice(0, stepIdx).map(s => `${s.title}: ${s.result}`).join('\n\n');
-      const response = await processLearningStep(stepIdx, INITIAL_LEARNING_STEPS[stepIdx].title, project.files, previousFindings, activeModel.modelName);
+      const activeModel = PREDEFINED_MODELS.find(m => m.id === currentProjectState.selectedModelId) || PREDEFINED_MODELS[0];
+      const previousFindings = currentProjectState.learningSession!.steps
+        .slice(0, stepIdx)
+        .map(s => `${s.title}: ${s.result || ''}`)
+        .join('\n\n');
       
-      const newFiles = [...project.files];
-      let notes = project.learningSession?.outputs?.learningNotesContent;
-      let rules = project.learningSession?.outputs?.pluginRulesContent;
+      const response = await processLearningStep(stepIdx, INITIAL_LEARNING_STEPS[stepIdx].title, currentProjectState.files, previousFindings, activeModel.modelName);
+      
+      let nextFiles = [...currentProjectState.files];
+      let notes = currentProjectState.learningSession?.outputs?.learningNotesContent;
+      let rules = currentProjectState.learningSession?.outputs?.pluginRulesContent;
 
       if (response.generatedFiles) {
         response.generatedFiles.forEach((gen: any) => {
-          const idx = newFiles.findIndex(f => f.path === gen.path);
-          if (idx > -1) newFiles[idx].content = gen.content;
-          else newFiles.push({ name: gen.path, path: gen.path, type: 'file', content: gen.content });
+          const idx = nextFiles.findIndex(f => f.path === gen.path);
+          if (idx > -1) nextFiles[idx] = { ...nextFiles[idx], content: gen.content };
+          else nextFiles.push({ name: gen.path, path: gen.path, type: 'file', content: gen.content });
           if (gen.path === 'LEARNING_NOTES.md') notes = gen.content;
           if (gen.path === 'PLUGIN_RULES.md') rules = gen.content;
         });
       }
 
-      setProject(prev => ({
-        ...prev,
-        files: newFiles,
-        learningSession: {
-          ...prev.learningSession!,
-          steps: prev.learningSession!.steps.map((s, i) => i === stepIdx ? { ...s, status: 'completed' as const, result: response.resultMarkdown } : s),
-          outputs: { ...prev.learningSession?.outputs, learningNotesContent: notes, pluginRulesContent: rules }
+      const nextSession = {
+        ...currentProjectState.learningSession!,
+        steps: currentProjectState.learningSession!.steps.map((s, i) => 
+          i === stepIdx ? { ...s, status: 'completed' as const, result: response.resultMarkdown } : s
+        ),
+        outputs: { 
+          ...currentProjectState.learningSession?.outputs, 
+          learningNotesContent: notes, 
+          pluginRulesContent: rules 
         }
-      }));
-      setTimeout(() => executeLearningLoop(stepIdx + 1), 500);
+      };
+
+      const nextProjectState = {
+        ...currentProjectState,
+        files: nextFiles,
+        learningSession: nextSession
+      };
+
+      setProject(nextProjectState);
+
+      // Check if paused before continuing
+      if (!nextSession.isPaused) {
+        setTimeout(() => executeLearningLoop(stepIdx + 1, nextProjectState), 800);
+      }
     } catch (e: any) {
+      console.error("Step Execution Error:", e);
       setProject(prev => ({
         ...prev,
         learningSession: {
@@ -161,6 +184,20 @@ const App: React.FC = () => {
         }
       }));
     } finally { setIsProcessing(false); }
+  };
+
+  const handleStartLearning = () => {
+    const freshSession = {
+      ...project.learningSession!,
+      isActive: true,
+      isPaused: false,
+      currentStep: 0,
+      steps: INITIAL_LEARNING_STEPS.map(s => ({ ...s, status: 'pending' as const, result: undefined }))
+    };
+    
+    const freshProject = { ...project, learningSession: freshSession };
+    setProject(freshProject);
+    executeLearningLoop(0, freshProject);
   };
 
   const handleSendMessage = async (message: string, attachments: ChatAttachment[]) => {
@@ -217,17 +254,43 @@ const App: React.FC = () => {
   };
 
   const handleRestoreSnapshot = (snapshot: ProjectSnapshot) => {
-    setProject(prev => ({
-      ...prev,
-      files: snapshot.files,
-      activeFilePath: snapshot.activeFilePath
-    }));
+    setProject(prev => ({ ...prev, files: snapshot.files, activeFilePath: snapshot.activeFilePath }));
     setShowSnapshotManager(false);
   };
 
   const handleDeleteSnapshot = async (id: string) => {
     await deleteSnapshot(id);
     setSnapshots(prev => prev.filter(s => s.id !== id));
+  };
+
+  const handleDownloadZip = async () => {
+    const JSZip = getJSZip();
+    if (!JSZip) {
+      setErrorMessage("JSZip is not yet available. Please wait for the CDN to load or refresh.");
+      return;
+    }
+    try {
+      const zip = new JSZip();
+      project.files.forEach(file => { if (file.type === 'file') zip.file(file.path, file.content); });
+      const content = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(content);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'obsidian-plugin-architect.zip';
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+    } catch (e: any) { setErrorMessage("ZIP generation failed: " + e.message); }
+  };
+
+  const handleDownloadMarkdown = (content: string | undefined, filename: string) => {
+    if (!content) return;
+    const blob = new Blob([content], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 100);
   };
 
   useEffect(() => {
@@ -243,11 +306,21 @@ const App: React.FC = () => {
         <LearningModePanel 
           session={project.learningSession} 
           onClose={() => setShowLearningMode(false)}
-          onStart={() => { setProject(p => ({ ...p, learningSession: { ...p.learningSession!, isActive: true, currentStep: 0, steps: INITIAL_LEARNING_STEPS } })); executeLearningLoop(0); }}
-          onPauseToggle={() => setProject(p => ({ ...p, learningSession: { ...p.learningSession!, isPaused: !p.learningSession!.isPaused } }))}
+          onStart={handleStartLearning}
+          onPauseToggle={() => setProject(p => {
+             const nextPaused = !p.learningSession!.isPaused;
+             if (!nextPaused && p.learningSession!.isActive) {
+                // Resume loop if it was active
+                setTimeout(() => executeLearningLoop(p.learningSession!.currentStep + 1, {
+                  ...p,
+                  learningSession: { ...p.learningSession!, isPaused: nextPaused }
+                }), 100);
+             }
+             return { ...p, learningSession: { ...p.learningSession!, isPaused: nextPaused } };
+          })}
           isProcessing={isProcessing}
-          onDownloadNotes={() => { const b = new Blob([project.learningSession?.outputs?.learningNotesContent || ''], { type: 'text/markdown' }); const u = URL.createObjectURL(b); const l = document.createElement('a'); l.href = u; l.download = 'LEARNING_NOTES.md'; l.click(); }}
-          onDownloadRules={() => { const b = new Blob([project.learningSession?.outputs?.pluginRulesContent || ''], { type: 'text/markdown' }); const u = URL.createObjectURL(b); const l = document.createElement('a'); l.href = u; l.download = 'PLUGIN_RULES.md'; l.click(); }}
+          onDownloadNotes={() => handleDownloadMarkdown(project.learningSession?.outputs?.learningNotesContent, 'LEARNING_NOTES.md')}
+          onDownloadRules={() => handleDownloadMarkdown(project.learningSession?.outputs?.pluginRulesContent, 'PLUGIN_RULES.md')}
         />
       )}
 
@@ -273,7 +346,7 @@ const App: React.FC = () => {
       )}
 
       <aside style={{ width: leftPanelVisible ? '260px' : '0px' }} className="flex-shrink-0 border-r border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 transition-all duration-300 overflow-hidden">
-        <FileTree files={project.files} activeFile={project.activeFilePath} changedFilePaths={project.changedFilePaths || []} onSelect={(path) => setProject(p => ({ ...p, activeFilePath: path }))} onSync={() => {}} onDownload={() => {}} onToggleCollapse={() => setLeftPanelVisible(false)} onAddFile={(name) => setProject(p => ({ ...p, files: [...p.files, { name, path: name, content: '', type: 'file' }], activeFilePath: name }))} onDeleteFile={(path) => setProject(p => ({ ...p, files: p.files.filter(f => f.path !== path), activeFilePath: p.activeFilePath === path ? 'README.md' : p.activeFilePath }))} onImportZip={handleImportZip} />
+        <FileTree files={project.files} activeFile={project.activeFilePath} changedFilePaths={project.changedFilePaths || []} onSelect={(path) => setProject(p => ({ ...p, activeFilePath: path }))} onSync={() => {}} onDownload={handleDownloadZip} onToggleCollapse={() => setLeftPanelVisible(false)} onAddFile={(name) => setProject(p => ({ ...p, files: [...p.files, { name, path: name, content: '', type: 'file' }], activeFilePath: name }))} onDeleteFile={(path) => setProject(p => ({ ...p, files: p.files.filter(f => f.path !== path), activeFilePath: p.activeFilePath === path ? 'README.md' : p.activeFilePath }))} onImportZip={handleImportZip} />
       </aside>
 
       <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-zinc-950 relative">

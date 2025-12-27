@@ -18,8 +18,6 @@ interface ChatPanelProps {
   onModelChange: (modelId: string) => void;
   onToggleCollapse: () => void;
   onEditMessage: (index: number, newContent: string) => void;
-  learningSession?: LearningSession;
-  onToggleLearningMode?: () => void;
 }
 
 const ChatPanel: React.FC<ChatPanelProps> = ({ 
@@ -32,9 +30,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
   availableModels = [],
   onModelChange, 
   onToggleCollapse,
-  onEditMessage,
-  learningSession,
-  onToggleLearningMode
+  onEditMessage
 }) => {
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
@@ -179,22 +175,6 @@ const ChatPanel: React.FC<ChatPanelProps> = ({
             </div>
           </div>
         </div>
-
-        {/* Learning Mode Button */}
-        {onToggleLearningMode && (
-          <button 
-            onClick={onToggleLearningMode}
-            className={`flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${
-              learningSession?.isActive 
-                ? 'bg-blue-600/10 border border-blue-500/30 text-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.1)]' 
-                : 'bg-zinc-200 dark:bg-zinc-800 border border-transparent text-zinc-500 hover:border-blue-500/30 hover:text-blue-500'
-            }`}
-          >
-            <BrainCircuit size={14} className={learningSession?.isActive ? 'animate-pulse' : ''} />
-            Learning Mode
-            {learningSession?.isActive && <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-ping" />}
-          </button>
-        )}
       </div>
 
       {/* Chat Area */}
