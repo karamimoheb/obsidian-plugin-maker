@@ -69,23 +69,38 @@
     .dark .prose-rtl {
       color: #e4e4e7; /* text-zinc-200 */
     }
+
+    /* Standard LTR styling for English content */
+    .prose-ltr {
+      direction: ltr;
+      text-align: left;
+      font-family: 'Inter', sans-serif;
+      font-weight: 400;
+      color: #3f3f46;
+    }
+    .dark .prose-ltr {
+      color: #e4e4e7;
+    }
     
-    .prose-rtl h1, .prose-rtl h2, .prose-rtl h3, .prose-rtl h4 {
+    .prose-rtl h1, .prose-rtl h2, .prose-rtl h3, .prose-rtl h4,
+    .prose-ltr h1, .prose-ltr h2, .prose-ltr h3, .prose-ltr h4 {
       font-weight: 700;
       margin-top: 2rem;
       margin-bottom: 1rem;
       color: #2563eb; /* blue-600 */
     }
-    .dark .prose-rtl h1, .dark .prose-rtl h2, .dark .prose-rtl h3, .dark .prose-rtl h4 {
+    .dark .prose-rtl h1, .dark .prose-rtl h2, .dark .prose-rtl h3, .dark .prose-rtl h4,
+    .dark .prose-ltr h1, .dark .prose-ltr h2, .dark .prose-ltr h3, .dark .prose-ltr h4 {
       color: #60a5fa; /* blue-400 */
     }
-    .prose-rtl p {
+    
+    .prose-rtl p, .prose-ltr p {
       margin-bottom: 1.25rem;
       line-height: 1.8;
     }
     
-    /* Code blocks */
-    .prose-rtl pre {
+    /* Code blocks - Always LTR */
+    .prose-rtl pre, .prose-ltr pre {
       direction: ltr !important;
       text-align: left !important;
       background: #f4f4f5;
@@ -97,13 +112,13 @@
       border: 1px solid rgba(0,0,0,0.05);
       font-size: 0.85rem;
     }
-    .dark .prose-rtl pre {
+    .dark .prose-rtl pre, .dark .prose-ltr pre {
       background: #09090b;
       color: #e4e4e7;
       border-color: rgba(255,255,255,0.05);
     }
     
-    .prose-rtl code {
+    .prose-rtl code, .prose-ltr code {
       direction: ltr !important;
       text-align: left !important;
       font-family: 'JetBrains Mono', monospace;
@@ -114,7 +129,7 @@
       font-size: 0.9em;
       font-weight: 500;
     }
-    .dark .prose-rtl code {
+    .dark .prose-rtl code, .dark .prose-ltr code {
       background: rgba(59, 130, 246, 0.2);
       color: #93c5fd;
     }
@@ -153,6 +168,8 @@
       caret-color: #3b82f6;
       resize: none;
       outline: none;
+      direction: ltr !important; /* Force Editor to always be LTR */
+      text-align: left !important;
     }
 
     .dark .editor-textarea {

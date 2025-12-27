@@ -11,7 +11,7 @@ import { DEFAULT_FILES } from './constants';
 import { processArchitectRequest } from './services/gemini';
 import { saveProject, loadProject, saveSnapshot, getSnapshots, deleteSnapshot, saveIssue, getIssues, deleteIssue } from './services/db';
 import { scanLocalDirectory, reconcileFiles, saveFileToLocal, SyncProgress } from './services/sync';
-import { Sun, Moon, PanelLeft, PanelRight, Loader2, Menu, MessageSquare, FolderSync, AlertCircle, X, History, Bug, ClipboardList, ShieldAlert, Download, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Sun, Moon, PanelLeft, PanelRight, Loader2, Menu, MessageSquare, FolderSync, AlertCircle, X, History, Bug, ClipboardList, ShieldAlert, Download, RefreshCw, CheckCircle2, GripVertical } from 'lucide-react';
 
 declare const JSZip: any;
 
@@ -40,6 +40,11 @@ const App: React.FC = () => {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [leftPanelVisible, setLeftPanelVisible] = useState(window.innerWidth > 1024);
   const [rightPanelVisible, setRightPanelVisible] = useState(window.innerWidth > 1280);
+  const [rightPanelWidth, setRightPanelWidth] = useState(() => {
+    const saved = localStorage.getItem('rightPanelWidth');
+    return saved ? parseInt(saved, 10) : 320;
+  });
+  
   const [directoryHandle, setDirectoryHandle] = useState<FileSystemDirectoryHandle | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [syncProgress, setSyncProgress] = useState<SyncProgress>({ status: 'idle', percentage: 0, currentFile: '' });
@@ -79,6 +84,33 @@ const App: React.FC = () => {
     };
     init();
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem('rightPanelWidth', rightPanelWidth.toString());
+  }, [rightPanelWidth]);
+
+  const handleRightResizeMouseDown = (e: React.MouseEvent) => {
+    if (window.innerWidth < 1024) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = rightPanelWidth;
+    
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = startX - moveEvent.clientX;
+      const newWidth = Math.min(Math.max(280, startWidth + delta), window.innerWidth * 0.6);
+      setRightPanelWidth(newWidth);
+    };
+    
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = 'default';
+    };
+    
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    document.body.style.cursor = 'col-resize';
+  };
 
   const onTouchStart = (e: React.TouchEvent) => {
     touchStartPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -179,21 +211,29 @@ const App: React.FC = () => {
         issues.filter(i => i.status !== 'resolved'), project.tasks || []
       );
       
-      // If stopped, abortControllerRef would have been cleared or we can check a flag.
-      // But processArchitectRequest is a single promise. To "stop", we just ignore the result.
       if (!abortControllerRef.current) return;
 
       const architectMsg: ChatMessage = { role: 'assistant', content: response.chatMessage, timestamp: Date.now() };
       const newFiles = [...project.files];
+      let newlyCreatedPath = null;
+
       response.files.forEach((newFile: any) => {
         const index = newFiles.findIndex(f => f.path === newFile.path);
-        if (index > -1) newFiles[index] = { ...newFiles[index], content: newFile.content };
-        else newFiles.push({ name: newFile.path.split('/').pop() || newFile.path, path: newFile.path, type: 'file', content: newFile.content });
+        if (index > -1) {
+          newFiles[index] = { ...newFiles[index], content: newFile.content };
+        } else {
+          newFiles.push({ name: newFile.path.split('/').pop() || newFile.path, path: newFile.path, type: 'file', content: newFile.content });
+          if (newFile.path === 'PLAN.md') newlyCreatedPath = 'PLAN.md';
+        }
       });
       
       setProject(prev => ({ 
-        ...prev, files: newFiles, chatHistory: [...prev.chatHistory, architectMsg], 
-        changedFilePaths: response.files.map((f: any) => f.path), tasks: response.tasks || prev.tasks
+        ...prev, 
+        files: newFiles, 
+        chatHistory: [...prev.chatHistory, architectMsg], 
+        changedFilePaths: response.files.map((f: any) => f.path), 
+        tasks: response.tasks || prev.tasks,
+        activeFilePath: newlyCreatedPath || prev.activeFilePath
       }));
       
       if (directoryHandle) {
@@ -211,9 +251,16 @@ const App: React.FC = () => {
     }
   };
 
+  const handleBuildFromPlan = () => {
+    const planFile = project.files.find(f => f.path === 'PLAN.md');
+    if (!planFile) return;
+    
+    handleSendMessage("Build Plugin from Specs: Please implement all the features and file structures exactly as defined in the PLAN.md file.", []);
+  };
+
   const handleStopProcessing = () => {
     if (isProcessing) {
-      abortControllerRef.current = null; // Mark as ignored
+      abortControllerRef.current = null;
       setIsProcessing(false);
       setProject(prev => ({
         ...prev,
@@ -318,23 +365,44 @@ const App: React.FC = () => {
           </div>
         </header>
         <div className="flex-1 overflow-hidden">
-          <CodeEditor content={project.files.find(f => f.path === project.activeFilePath)?.content || ''} fileName={project.activeFilePath?.split('/').pop() || ''} onChange={(val) => { const updated = project.files.map(f => f.path === project.activeFilePath ? {...f, content: val} : f); setProject(prev => ({...prev, files: updated})); if (directoryHandle) saveFileToLocal(directoryHandle, { name: project.activeFilePath!, path: project.activeFilePath!, content: val, type: 'file' }); }} />
+          <CodeEditor 
+            content={project.files.find(f => f.path === project.activeFilePath)?.content || ''} 
+            fileName={project.activeFilePath?.split('/').pop() || ''} 
+            isProcessing={isProcessing}
+            onBuildFromPlan={handleBuildFromPlan}
+            onChange={(val) => { const updated = project.files.map(f => f.path === project.activeFilePath ? {...f, content: val} : f); setProject(prev => ({...prev, files: updated})); if (directoryHandle) saveFileToLocal(directoryHandle, { name: project.activeFilePath!, path: project.activeFilePath!, content: val, type: 'file' }); }} 
+          />
         </div>
       </main>
 
-      <aside style={{ width: rightPanelVisible ? (window.innerWidth < 1024 ? '90vw' : '320px') : '0px' }} className="fixed lg:relative inset-y-0 right-0 z-50 flex-shrink-0 border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 transition-all duration-300 overflow-hidden">
-        <ChatPanel 
-          history={project.chatHistory} 
-          onSendMessage={handleSendMessage} 
-          onClearMemory={handleClearMemory}
-          onStopProcessing={handleStopProcessing}
-          onEditMessage={handleEditMessage}
-          isProcessing={isProcessing} 
-          selectedModelId={project.selectedModelId} 
-          availableModels={PREDEFINED_MODELS} 
-          onModelChange={(id) => setProject(p => ({ ...p, selectedModelId: id }))} 
-          onToggleCollapse={() => setRightPanelVisible(false)} 
-        />
+      <aside 
+        style={{ width: rightPanelVisible ? (window.innerWidth < 1024 ? '90vw' : `${rightPanelWidth}px`) : '0px' }} 
+        className="fixed lg:relative inset-y-0 right-0 z-50 flex-shrink-0 border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 transition-all duration-300"
+      >
+        {/* Resize Handle (Desktop Only) */}
+        {rightPanelVisible && window.innerWidth >= 1024 && (
+          <div 
+            onMouseDown={handleRightResizeMouseDown}
+            className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500/50 transition-colors z-[60] flex items-center justify-center group"
+          >
+             <div className="opacity-0 group-hover:opacity-100 bg-blue-500 w-0.5 h-8 rounded-full" />
+          </div>
+        )}
+        
+        <div className="h-full overflow-hidden">
+          <ChatPanel 
+            history={project.chatHistory} 
+            onSendMessage={handleSendMessage} 
+            onClearMemory={handleClearMemory}
+            onStopProcessing={handleStopProcessing}
+            onEditMessage={handleEditMessage}
+            isProcessing={isProcessing} 
+            selectedModelId={project.selectedModelId} 
+            availableModels={PREDEFINED_MODELS} 
+            onModelChange={(id) => setProject(p => ({ ...p, selectedModelId: id }))} 
+            onToggleCollapse={() => setRightPanelVisible(false)} 
+          />
+        </div>
       </aside>
     </div>
   );
