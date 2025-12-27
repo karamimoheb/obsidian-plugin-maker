@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import FileTree from './components/FileTree';
 import CodeEditor from './components/CodeEditor';
 import ChatPanel from './components/ChatPanel';
@@ -11,10 +11,9 @@ import { ProjectState, FileEntry, ChatMessage, ChatAttachment, AIModelConfig, Pr
 import { DEFAULT_FILES } from './constants';
 import { processArchitectRequest, processDebugRequest, processLearningStep } from './services/gemini';
 import { saveProject, loadProject, saveSnapshot, getSnapshots, deleteSnapshot, saveIssue, getIssues, deleteIssue } from './services/db';
-import { Sun, Moon, Loader2, Menu, MessageSquare, AlertCircle, X, History, Bug, ClipboardList, ShieldAlert, BrainCircuit } from 'lucide-react';
+import { Sun, Moon, Loader2, Menu, MessageSquare, AlertCircle, X, History, Bug, ClipboardList, BrainCircuit, Download } from 'lucide-react';
 
 const PREDEFINED_MODELS: AIModelConfig[] = [
-  { id: '3pro', name: 'Gemini 3 Pro', baseUrl: '', apiKey: '', modelName: 'gemini-3-pro-preview', provider: 'gemini' },
   { id: '3flash', name: 'Gemini 3 Flash', baseUrl: '', apiKey: '', modelName: 'gemini-3-flash-preview', provider: 'gemini' },
   { id: '25pro', name: 'Gemini 2.5 Pro', baseUrl: '', apiKey: '', modelName: 'gemini-2.5-pro-preview', provider: 'gemini' },
   { id: '25flash', name: 'Gemini 2.5 Flash', baseUrl: '', apiKey: '', modelName: 'gemini-2.5-flash-preview-09-2025', provider: 'gemini' }
@@ -33,7 +32,7 @@ const App: React.FC = () => {
   const [project, setProject] = useState<ProjectState>({
     files: DEFAULT_FILES,
     activeFilePath: 'README.md',
-    selectedModelId: '3pro',
+    selectedModelId: '3flash',
     chatHistory: [],
     changedFilePaths: [],
     theme: 'dark',
@@ -66,7 +65,6 @@ const App: React.FC = () => {
   const [snapshots, setSnapshots] = useState<ProjectSnapshot[]>([]);
   const [issues, setIssues] = useState<ProjectIssue[]>([]);
 
-  // JSZip global availability check
   const getJSZip = () => (window as any).JSZip;
 
   useEffect(() => {
@@ -74,9 +72,13 @@ const App: React.FC = () => {
       try {
         const saved = await loadProject();
         if (saved) {
+          // Filter out 3pro if it was previously saved
+          const filteredSavedSelectedModel = saved.selectedModelId === '3pro' ? '3flash' : saved.selectedModelId;
+          
           setProject(prev => ({ 
             ...prev, 
             ...saved, 
+            selectedModelId: filteredSavedSelectedModel,
             models: PREDEFINED_MODELS, 
             learningSession: saved.learningSession || prev.learningSession
           }));
@@ -94,28 +96,30 @@ const App: React.FC = () => {
 
   const handleImportZip = (importedFiles: FileEntry[]) => {
     if (!importedFiles.length) return;
-    setProject(prev => ({
-      ...prev,
+    const newState = {
+      ...project,
       files: importedFiles,
       activeFilePath: importedFiles[0].path,
       learningSession: {
-        ...prev.learningSession!,
+        ...project.learningSession!,
         isZipImported: true,
         isActive: false,
         currentStep: 0,
-        steps: INITIAL_LEARNING_STEPS,
+        steps: INITIAL_LEARNING_STEPS.map(s => ({ ...s, status: 'pending' as const })),
         outputs: {}
       }
-    }));
+    };
+    setProject(newState);
+    saveProject(newState);
   };
 
-  const executeLearningLoop = async (stepIdx: number, currentProjectState: ProjectState) => {
+  const executeLearningLoop = async (stepIdx: number, currentProject: ProjectState) => {
     if (stepIdx >= INITIAL_LEARNING_STEPS.length) {
       setProject(prev => ({ ...prev, learningSession: { ...prev.learningSession!, isActive: false } }));
       return;
     }
 
-    // Mark current step as active
+    // Step status update
     setProject(prev => ({
       ...prev,
       learningSession: {
@@ -127,17 +131,17 @@ const App: React.FC = () => {
 
     setIsProcessing(true);
     try {
-      const activeModel = PREDEFINED_MODELS.find(m => m.id === currentProjectState.selectedModelId) || PREDEFINED_MODELS[0];
-      const previousFindings = currentProjectState.learningSession!.steps
+      const activeModel = PREDEFINED_MODELS.find(m => m.id === currentProject.selectedModelId) || PREDEFINED_MODELS[0];
+      const previousFindings = currentProject.learningSession!.steps
         .slice(0, stepIdx)
-        .map(s => `${s.title}: ${s.result || ''}`)
+        .map(s => `### ${s.title}\n${s.result || 'No data.'}`)
         .join('\n\n');
       
-      const response = await processLearningStep(stepIdx, INITIAL_LEARNING_STEPS[stepIdx].title, currentProjectState.files, previousFindings, activeModel.modelName);
+      const response = await processLearningStep(stepIdx, INITIAL_LEARNING_STEPS[stepIdx].title, currentProject.files, previousFindings, activeModel.modelName);
       
-      let nextFiles = [...currentProjectState.files];
-      let notes = currentProjectState.learningSession?.outputs?.learningNotesContent;
-      let rules = currentProjectState.learningSession?.outputs?.pluginRulesContent;
+      let nextFiles = [...currentProject.files];
+      let notes = currentProject.learningSession?.outputs?.learningNotesContent;
+      let rules = currentProject.learningSession?.outputs?.pluginRulesContent;
 
       if (response.generatedFiles) {
         response.generatedFiles.forEach((gen: any) => {
@@ -149,32 +153,29 @@ const App: React.FC = () => {
         });
       }
 
-      const nextSession = {
-        ...currentProjectState.learningSession!,
-        steps: currentProjectState.learningSession!.steps.map((s, i) => 
-          i === stepIdx ? { ...s, status: 'completed' as const, result: response.resultMarkdown } : s
-        ),
-        outputs: { 
-          ...currentProjectState.learningSession?.outputs, 
-          learningNotesContent: notes, 
-          pluginRulesContent: rules 
+      const nextState: ProjectState = {
+        ...currentProject,
+        files: nextFiles,
+        learningSession: {
+          ...currentProject.learningSession!,
+          steps: currentProject.learningSession!.steps.map((s, i) => 
+            i === stepIdx ? { ...s, status: 'completed' as const, result: response.resultMarkdown } : s
+          ),
+          outputs: { 
+            ...currentProject.learningSession?.outputs, 
+            learningNotesContent: notes, 
+            pluginRulesContent: rules 
+          }
         }
       };
 
-      const nextProjectState = {
-        ...currentProjectState,
-        files: nextFiles,
-        learningSession: nextSession
-      };
+      setProject(nextState);
+      saveProject(nextState);
 
-      setProject(nextProjectState);
-
-      // Check if paused before continuing
-      if (!nextSession.isPaused) {
-        setTimeout(() => executeLearningLoop(stepIdx + 1, nextProjectState), 800);
+      if (!nextState.learningSession!.isPaused) {
+        setTimeout(() => executeLearningLoop(stepIdx + 1, nextState), 1200);
       }
     } catch (e: any) {
-      console.error("Step Execution Error:", e);
       setProject(prev => ({
         ...prev,
         learningSession: {
@@ -192,9 +193,8 @@ const App: React.FC = () => {
       isActive: true,
       isPaused: false,
       currentStep: 0,
-      steps: INITIAL_LEARNING_STEPS.map(s => ({ ...s, status: 'pending' as const, result: undefined }))
+      steps: INITIAL_LEARNING_STEPS.map(s => ({ ...s, status: 'pending' as const }))
     };
-    
     const freshProject = { ...project, learningSession: freshSession };
     setProject(freshProject);
     executeLearningLoop(0, freshProject);
@@ -202,9 +202,9 @@ const App: React.FC = () => {
 
   const handleSendMessage = async (message: string, attachments: ChatAttachment[]) => {
     const activeModel = PREDEFINED_MODELS.find(m => m.id === project.selectedModelId) || PREDEFINED_MODELS[0];
-    setProject(prev => ({ ...prev, chatHistory: [...prev.chatHistory, { role: 'user', content: message, timestamp: Date.now(), attachments }], changedFilePaths: [] }));
+    const newUserMsg: ChatMessage = { role: 'user', content: message, timestamp: Date.now(), attachments };
+    setProject(prev => ({ ...prev, chatHistory: [...prev.chatHistory, newUserMsg], changedFilePaths: [] }));
     setIsProcessing(true);
-    abortControllerRef.current = new AbortController();
     try {
       const response = await processArchitectRequest(message, project.files, project.chatHistory, activeModel.modelName, attachments, issues.filter(i => i.status !== 'resolved'), project.tasks || []);
       const newFiles = [...project.files];
@@ -213,10 +213,12 @@ const App: React.FC = () => {
         if (idx > -1) newFiles[idx].content = nf.content;
         else newFiles.push({ name: nf.path.split('/').pop() || nf.path, path: nf.path, type: 'file', content: nf.content });
       });
-      setProject(prev => ({ ...prev, files: newFiles, chatHistory: [...prev.chatHistory, { role: 'assistant', content: response.chatMessage, timestamp: Date.now() }], tasks: response.tasks || prev.tasks }));
+      const finalState = { ...project, files: newFiles, chatHistory: [...project.chatHistory, newUserMsg, { role: 'assistant', content: response.chatMessage, timestamp: Date.now() }], tasks: response.tasks || project.tasks };
+      setProject(finalState);
+      saveProject(finalState);
     } catch (error: any) {
-      setProject(prev => ({ ...prev, chatHistory: [...prev.chatHistory, { role: 'system', content: `Error: ${error.message}`, timestamp: Date.now() }] }));
-    } finally { setIsProcessing(false); abortControllerRef.current = null; }
+      setErrorMessage(error.message);
+    } finally { setIsProcessing(false); }
   };
 
   const handleAddIssue = async (log: string) => {
@@ -242,44 +244,30 @@ const App: React.FC = () => {
   };
 
   const handleSaveSnapshot = async (name: string) => {
-    const newSnap: ProjectSnapshot = {
-      id: Math.random().toString(36).substring(2, 11),
-      name,
-      timestamp: Date.now(),
-      files: [...project.files],
-      activeFilePath: project.activeFilePath
-    };
+    const newSnap: ProjectSnapshot = { id: Math.random().toString(36).substring(2, 11), name, timestamp: Date.now(), files: [...project.files], activeFilePath: project.activeFilePath };
     await saveSnapshot(newSnap);
     setSnapshots(prev => [...prev, newSnap]);
   };
 
   const handleRestoreSnapshot = (snapshot: ProjectSnapshot) => {
-    setProject(prev => ({ ...prev, files: snapshot.files, activeFilePath: snapshot.activeFilePath }));
+    const restored = { ...project, files: snapshot.files, activeFilePath: snapshot.activeFilePath };
+    setProject(restored);
+    saveProject(restored);
     setShowSnapshotManager(false);
-  };
-
-  const handleDeleteSnapshot = async (id: string) => {
-    await deleteSnapshot(id);
-    setSnapshots(prev => prev.filter(s => s.id !== id));
   };
 
   const handleDownloadZip = async () => {
     const JSZip = getJSZip();
-    if (!JSZip) {
-      setErrorMessage("JSZip is not yet available. Please wait for the CDN to load or refresh.");
-      return;
-    }
+    if (!JSZip) return setErrorMessage("JSZip library not found.");
     try {
       const zip = new JSZip();
       project.files.forEach(file => { if (file.type === 'file') zip.file(file.path, file.content); });
       const content = await zip.generateAsync({ type: 'blob' });
       const url = URL.createObjectURL(content);
       const link = document.createElement('a');
-      link.href = url;
-      link.download = 'obsidian-plugin-architect.zip';
-      link.click();
+      link.href = url; link.download = 'obsidian-plugin-architect.zip'; link.click();
       setTimeout(() => URL.revokeObjectURL(url), 100);
-    } catch (e: any) { setErrorMessage("ZIP generation failed: " + e.message); }
+    } catch (e: any) { setErrorMessage("ZIP creation failed: " + e.message); }
   };
 
   const handleDownloadMarkdown = (content: string | undefined, filename: string) => {
@@ -287,16 +275,13 @@ const App: React.FC = () => {
     const blob = new Blob([content], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    link.click();
+    link.href = url; link.download = filename; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 100);
   };
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', project.theme === 'dark');
-    if (!isInitialLoad) saveProject(project).catch(console.error);
-  }, [project, isInitialLoad]);
+  }, [project.theme]);
 
   if (isInitialLoad) return <div className="h-screen w-screen flex items-center justify-center bg-zinc-950 text-blue-500"><Loader2 className="animate-spin" size={32} /></div>;
 
@@ -310,11 +295,7 @@ const App: React.FC = () => {
           onPauseToggle={() => setProject(p => {
              const nextPaused = !p.learningSession!.isPaused;
              if (!nextPaused && p.learningSession!.isActive) {
-                // Resume loop if it was active
-                setTimeout(() => executeLearningLoop(p.learningSession!.currentStep + 1, {
-                  ...p,
-                  learningSession: { ...p.learningSession!, isPaused: nextPaused }
-                }), 100);
+                executeLearningLoop(p.learningSession!.currentStep, { ...p, learningSession: { ...p.learningSession!, isPaused: nextPaused } });
              }
              return { ...p, learningSession: { ...p.learningSession!, isPaused: nextPaused } };
           })}
@@ -324,21 +305,12 @@ const App: React.FC = () => {
         />
       )}
 
-      {showSnapshotManager && (
-        <SnapshotManager 
-          snapshots={snapshots} 
-          onClose={() => setShowSnapshotManager(false)} 
-          onRestore={handleRestoreSnapshot} 
-          onSave={handleSaveSnapshot} 
-          onDelete={handleDeleteSnapshot} 
-        />
-      )}
-
+      {showSnapshotManager && <SnapshotManager snapshots={snapshots} onClose={() => setShowSnapshotManager(false)} onRestore={handleRestoreSnapshot} onSave={handleSaveSnapshot} onDelete={(id) => deleteSnapshot(id).then(() => setSnapshots(s => s.filter(x => x.id !== id)))} />}
       {showDebugConsole && <DebugConsole issues={issues} isProcessing={isProcessing} onClose={() => setShowDebugConsole(false)} onAddIssue={handleAddIssue} onUpdateStatus={(id, s) => setIssues(p => p.map(i => i.id === id ? {...i, status: s} : i))} onDeleteIssue={(id) => deleteIssue(id).then(() => setIssues(p => p.filter(x => x.id !== id)))} />}
       {showRoadmap && <RoadmapManager tasks={project.tasks || []} onClose={() => setShowRoadmap(false)} onExecuteTask={(t) => { setShowRoadmap(false); handleSendMessage(t, []); }} />}
 
       {errorMessage && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[300] w-[90%] max-w-lg bg-red-600 text-white p-4 rounded-2xl flex items-start gap-3 shadow-2xl">
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[300] w-[90%] max-w-lg bg-red-600 text-white p-4 rounded-2xl flex items-start gap-3 shadow-2xl animate-in fade-in slide-in-from-top-4">
           <AlertCircle size={20} className="flex-shrink-0" />
           <div className="flex-1 text-xs"><b>System Alert</b><p>{errorMessage}</p></div>
           <button onClick={() => setErrorMessage(null)} className="p-1 hover:bg-white/10 rounded-full"><X size={18} /></button>
@@ -352,39 +324,42 @@ const App: React.FC = () => {
       <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-zinc-950 relative">
         <header className="h-14 border-b border-zinc-200 dark:border-zinc-800 px-4 flex items-center justify-between bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-md">
           <div className="flex items-center gap-2">
-            {!leftPanelVisible && <button onClick={() => setLeftPanelVisible(true)} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-lg text-zinc-500"><Menu size={20} /></button>}
-            <h1 className="text-sm font-bold tracking-tight">Architect IDE</h1>
+            {!leftPanelVisible && <button onClick={() => setLeftPanelVisible(true)} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-all"><Menu size={20} /></button>}
+            <h1 className="text-sm font-bold tracking-tight">Architect IDE Pro</h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
             {project.learningSession?.isZipImported && (
-              <button onClick={() => setShowLearningMode(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-bold bg-blue-600/10 text-blue-500 border border-blue-500/30">
+              <button onClick={() => setShowLearningMode(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-bold bg-blue-600/10 text-blue-500 border border-blue-500/30 hover:bg-blue-600 hover:text-white transition-all">
                 <BrainCircuit size={16} /> <span className="hidden sm:inline">Learning Mode</span>
               </button>
             )}
-            <button onClick={() => setShowRoadmap(true)} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-lg text-zinc-500" title="Roadmap"><ClipboardList size={18} /></button>
-            <button onClick={() => setShowSnapshotManager(true)} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-lg text-zinc-500" title="History"><History size={18} /></button>
-            <button onClick={() => setShowDebugConsole(true)} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 relative" title="Debug Center"><Bug size={18} />{issues.some(i => i.status !== 'resolved') && <span className="absolute top-1 right-1 w-2 h-2 bg-red-600 rounded-full animate-pulse" />}</button>
-            <button onClick={() => setProject(p => ({ ...p, theme: p.theme === 'dark' ? 'light' : 'dark' }))} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-lg text-zinc-500">{project.theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}</button>
-            {!rightPanelVisible && <button onClick={() => setRightPanelVisible(true)} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-lg text-zinc-500"><MessageSquare size={18} /></button>}
+            <button onClick={() => setShowRoadmap(true)} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors" title="Roadmap"><ClipboardList size={18} /></button>
+            <button onClick={() => setShowSnapshotManager(true)} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors" title="History"><History size={18} /></button>
+            <button onClick={() => setShowDebugConsole(true)} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 relative transition-colors" title="Debug Center">
+              <Bug size={18} />
+              {issues.some(i => i.status !== 'resolved') && <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-red-600 rounded-full animate-pulse border-2 border-white dark:border-zinc-950" />}
+            </button>
+            <button onClick={() => setProject(p => ({ ...p, theme: p.theme === 'dark' ? 'light' : 'dark' }))} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors">
+              {project.theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+            {!rightPanelVisible && <button onClick={() => setRightPanelVisible(true)} className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors"><MessageSquare size={18} /></button>}
           </div>
         </header>
         <div className="flex-1 overflow-hidden">
-          <CodeEditor content={project.files.find(f => f.path === project.activeFilePath)?.content || ''} fileName={project.activeFilePath?.split('/').pop() || ''} isProcessing={isProcessing} onChange={(val) => setProject(prev => ({...prev, files: prev.files.map(f => f.path === project.activeFilePath ? {...f, content: val} : f)}))} onBuildFromPlan={() => handleSendMessage("Build plugin from plan", [])} />
+          <CodeEditor content={project.files.find(f => f.path === project.activeFilePath)?.content || ''} fileName={project.activeFilePath?.split('/').pop() || ''} isProcessing={isProcessing} onChange={(val) => setProject(prev => ({...prev, files: prev.files.map(f => f.path === project.activeFilePath ? {...f, content: val} : f)}))} onBuildFromPlan={() => handleSendMessage("Build plugin from specs", [])} />
         </div>
       </main>
 
       <aside style={{ width: rightPanelVisible ? `${rightPanelWidth}px` : '0px' }} className="flex-shrink-0 border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 transition-all duration-300 relative">
         {rightPanelVisible && (
           <div onMouseDown={(e) => {
-            const startX = e.clientX;
-            const startWidth = rightPanelWidth;
+            const startX = e.clientX; const startWidth = rightPanelWidth;
             const move = (me: MouseEvent) => setRightPanelWidth(Math.max(280, startWidth - (me.clientX - startX)));
             const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
-            window.addEventListener('mousemove', move);
-            window.addEventListener('mouseup', up);
+            window.addEventListener('mousemove', move); window.addEventListener('mouseup', up);
           }} className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500/50 z-50 transition-colors" />
         )}
-        <ChatPanel history={project.chatHistory} onSendMessage={handleSendMessage} onClearMemory={() => setProject(p => ({ ...p, chatHistory: [] }))} onStopProcessing={() => setIsProcessing(false)} isProcessing={isProcessing} selectedModelId={project.selectedModelId} availableModels={PREDEFINED_MODELS} onModelChange={(id) => setProject(p => ({ ...p, selectedModelId: id }))} onToggleCollapse={() => setRightPanelVisible(false)} onEditMessage={() => {}} learningSession={project.learningSession} onToggleLearningMode={() => project.learningSession?.isZipImported && setShowLearningMode(true)} />
+        <ChatPanel history={project.chatHistory} onSendMessage={handleSendMessage} onClearMemory={() => setProject(p => ({ ...p, chatHistory: [] }))} onStopProcessing={() => setIsProcessing(false)} isProcessing={isProcessing} selectedModelId={project.selectedModelId} availableModels={PREDEFINED_MODELS} onModelChange={(id) => setProject(p => ({ ...p, selectedModelId: id }))} onToggleCollapse={() => setRightPanelVisible(false)} onEditMessage={() => {}} />
       </aside>
     </div>
   );

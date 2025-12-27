@@ -75,7 +75,7 @@ export async function processArchitectRequest(
   userRequest: string,
   currentFiles: FileEntry[],
   chatHistory: ChatMessage[],
-  modelName: string = 'gemini-3-pro-preview',
+  modelName: string = 'gemini-3-flash-preview',
   attachments: ChatAttachment[] = [],
   openIssues: ProjectIssue[] = [],
   currentTasks: ProjectTask[] = [],
@@ -172,7 +172,7 @@ export async function processDebugRequest(
   errorLog: string,
   currentFiles: FileEntry[],
   resolvedIssues: ProjectIssue[] = [],
-  modelName: string = 'gemini-3-pro-preview'
+  modelName: string = 'gemini-3-flash-preview'
 ): Promise<any> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const fileContext = currentFiles.map(f => `Path: ${f.path}\nContent:\n${f.content}`).join('\n\n---\n\n');
@@ -236,7 +236,7 @@ export async function processLearningStep(
   stepTitle: string,
   currentFiles: FileEntry[],
   previousFindings: string = "",
-  modelName: string = 'gemini-3-pro-preview'
+  modelName: string = 'gemini-3-flash-preview'
 ): Promise<any> {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const fileContext = currentFiles.map(f => `Path: ${f.path}\nContent:\n${f.content}`).join('\n\n---\n\n');
@@ -269,7 +269,7 @@ export async function processLearningStep(
       }
     };
 
-    // Use higher budget for extraction
+    // Use higher budget for extraction if pro is selected
     if (modelName.includes('pro')) {
       config.thinkingConfig = { thinkingBudget: 16000 };
     }
