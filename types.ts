@@ -33,8 +33,9 @@ export interface ProjectIssue {
   id: string;
   errorLog: string;
   description?: string;
-  status: 'open' | 'fixing' | 'resolved';
+  status: 'open' | 'analyzing' | 'researching' | 'fixing' | 'resolved';
   timestamp: number;
+  analysis?: string;
 }
 
 export interface ProjectTask {

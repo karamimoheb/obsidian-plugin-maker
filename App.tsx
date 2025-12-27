@@ -8,7 +8,7 @@ import DebugConsole from './components/DebugConsole';
 import RoadmapManager from './components/RoadmapManager';
 import { ProjectState, FileEntry, ChatMessage, ChatAttachment, AIModelConfig, ProjectSnapshot, ProjectIssue, ProjectTask } from './types';
 import { DEFAULT_FILES } from './constants';
-import { processArchitectRequest } from './services/gemini';
+import { processArchitectRequest, processDebugRequest } from './services/gemini';
 import { saveProject, loadProject, saveSnapshot, getSnapshots, deleteSnapshot, saveIssue, getIssues, deleteIssue } from './services/db';
 import { scanLocalDirectory, reconcileFiles, saveFileToLocal, SyncProgress } from './services/sync';
 import { Sun, Moon, PanelLeft, PanelRight, Loader2, Menu, MessageSquare, FolderSync, AlertCircle, X, History, Bug, ClipboardList, ShieldAlert, Download, RefreshCw, CheckCircle2, GripVertical } from 'lucide-react';
@@ -251,10 +251,71 @@ const App: React.FC = () => {
     }
   };
 
+  const handleAddIssue = async (log: string) => {
+    const issueId = Math.random().toString(36).substring(2, 11);
+    const newIssue: ProjectIssue = {
+      id: issueId,
+      errorLog: log,
+      status: 'analyzing',
+      timestamp: Date.now()
+    };
+    
+    const updatedIssues = [...issues, newIssue];
+    setIssues(updatedIssues);
+    setIsProcessing(true);
+
+    try {
+      const activeModel = PREDEFINED_MODELS.find(m => m.id === project.selectedModelId) || PREDEFINED_MODELS[0];
+      
+      // Phase 1: Analyzing
+      const analysisResponse = await processDebugRequest(log, project.files, activeModel.modelName);
+      
+      // Update with analysis results
+      const resolvedIssues = updatedIssues.map(i => i.id === issueId ? {
+        ...i, 
+        status: analysisResponse.status as any || 'resolved',
+        analysis: analysisResponse.explanation
+      } : i);
+      setIssues(resolvedIssues);
+
+      // Apply files if provided
+      if (analysisResponse.files && analysisResponse.files.length > 0) {
+        const newFiles = [...project.files];
+        analysisResponse.files.forEach((newFile: any) => {
+          const index = newFiles.findIndex(f => f.path === newFile.path);
+          if (index > -1) newFiles[index] = { ...newFiles[index], content: newFile.content };
+          else newFiles.push({ name: newFile.path.split('/').pop() || newFile.path, path: newFile.path, type: 'file', content: newFile.content });
+        });
+        
+        setProject(prev => ({ ...prev, files: newFiles, changedFilePaths: analysisResponse.files.map((f: any) => f.path) }));
+        
+        if (directoryHandle) {
+          for (const f of analysisResponse.files) {
+            await saveFileToLocal(directoryHandle, { name: f.path, path: f.path, content: f.content, type: 'file' });
+          }
+        }
+      }
+
+      // Record in chat
+      const debugMsg: ChatMessage = { 
+        role: 'system', 
+        content: `🐞 Debug Fix Applied: ${analysisResponse.explanation}`, 
+        timestamp: Date.now() 
+      };
+      setProject(prev => ({ ...prev, chatHistory: [...prev.chatHistory, debugMsg] }));
+      
+      await saveIssue(newIssue);
+    } catch (e: any) {
+      setIssues(updatedIssues.map(i => i.id === issueId ? { ...i, status: 'open' } : i));
+      setErrorMessage("Debug Fix Failed: " + e.message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleBuildFromPlan = () => {
     const planFile = project.files.find(f => f.path === 'PLAN.md');
     if (!planFile) return;
-    
     handleSendMessage("Build Plugin from Specs: Please implement all the features and file structures exactly as defined in the PLAN.md file.", []);
   };
 
@@ -314,7 +375,18 @@ const App: React.FC = () => {
       )}
 
       {showSnapshotManager && <SnapshotManager snapshots={snapshots} onClose={() => setShowSnapshotManager(false)} onRestore={(s) => { setProject(p => ({...p, files: s.files, activeFilePath: s.activeFilePath})); setShowSnapshotManager(false); }} onSave={async (n) => { const s = { id: Math.random().toString(36).substring(2,11), name: n, timestamp: Date.now(), files: [...project.files], activeFilePath: project.activeFilePath }; await saveSnapshot(s); setSnapshots(p => [...p, s]); }} onDelete={(id) => deleteSnapshot(id).then(() => setSnapshots(s => s.filter(x => x.id !== id)))} />}
-      {showDebugConsole && <DebugConsole issues={issues} onClose={() => setShowDebugConsole(false)} onAddIssue={async (log) => { const n = { id: Math.random().toString(36).substring(2,11), errorLog: log, status: 'open' as const, timestamp: Date.now() }; await saveIssue(n); setIssues(p => [...p, n]); }} onUpdateStatus={(id, s) => { const up = issues.map(i => i.id === id ? {...i, status: s} : i); setIssues(up); }} onDeleteIssue={(id) => deleteIssue(id).then(() => setIssues(s => s.filter(x => x.id !== id)))} />}
+      
+      {showDebugConsole && (
+        <DebugConsole 
+          issues={issues} 
+          isProcessing={isProcessing}
+          onClose={() => setShowDebugConsole(false)} 
+          onAddIssue={handleAddIssue} 
+          onUpdateStatus={(id, s) => { const up = issues.map(i => i.id === id ? {...i, status: s} : i); setIssues(up); }} 
+          onDeleteIssue={(id) => deleteIssue(id).then(() => setIssues(s => s.filter(x => x.id !== id)))} 
+        />
+      )}
+      
       {showRoadmap && <RoadmapManager tasks={project.tasks || []} onClose={() => setShowRoadmap(false)} onExecuteTask={(t) => { setShowRoadmap(false); setRightPanelVisible(true); setTimeout(() => handleSendMessage(t, []), 300); }} />}
 
       {errorMessage && (
