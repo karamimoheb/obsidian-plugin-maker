@@ -14,9 +14,9 @@ import {
   FileText, 
   Zap, 
   ShieldAlert,
-  Eraser,
   Upload
 } from 'lucide-react';
+import JSZip from 'jszip';
 import { FileEntry } from '../types';
 
 interface FileTreeProps {
@@ -32,8 +32,6 @@ interface FileTreeProps {
   onDeleteFile: (path: string) => void;
   onImportZip: (files: FileEntry[]) => void;
 }
-
-declare const JSZip: any;
 
 const FileTree: React.FC<FileTreeProps> = ({ 
   files, 
@@ -63,18 +61,20 @@ const FileTree: React.FC<FileTreeProps> = ({
 
   const handleZipUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || typeof JSZip === 'undefined') return;
+    if (!file) return;
 
     try {
       const zip = new JSZip();
       const content = await zip.loadAsync(file);
       const importedFiles: FileEntry[] = [];
 
-      for (const [path, zipFile] of Object.entries(content.files)) {
-        // Fix: Cast zipFile to any to allow access to JSZip entry properties (dir, async)
-        const entry = zipFile as any;
-        if (!entry.dir) {
-          const fileContent = await entry.async('string');
+      // Iterate through the files in the ZIP archive
+      for (const [path, entry] of Object.entries(content.files)) {
+        // Fix: Explicitly cast entry as any to access JSZip properties (dir, async)
+        // This resolves TypeScript "unknown" type errors during compilation.
+        const zipEntry = entry as any;
+        if (!zipEntry.dir) {
+          const fileContent = await zipEntry.async('string');
           importedFiles.push({
             name: path.split('/').pop() || path,
             path: path,
@@ -131,7 +131,6 @@ const FileTree: React.FC<FileTreeProps> = ({
 
   return (
     <div className="flex flex-col h-full bg-inherit w-full text-sm select-none">
-      {/* Header */}
       <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-900/50 h-14">
         <h2 className="font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-widest text-[10px]">Explorer</h2>
         <div className="flex items-center gap-1">
@@ -141,7 +140,6 @@ const FileTree: React.FC<FileTreeProps> = ({
         </div>
       </div>
 
-      {/* Quick Actions Toolbar */}
       <div className="px-3 py-2 border-b border-zinc-100 dark:border-zinc-800/50 flex items-center gap-1 bg-zinc-50/30 dark:bg-zinc-900/30">
         <button 
           onClick={() => setIsAdding(!isAdding)}
@@ -161,7 +159,6 @@ const FileTree: React.FC<FileTreeProps> = ({
         </button>
       </div>
       
-      {/* File List */}
       <div className="flex-1 overflow-y-auto p-2 space-y-0.5 custom-scrollbar">
         {isAdding && (
           <form onSubmit={handleAdd} className="px-2 py-1 mb-2">
@@ -213,7 +210,6 @@ const FileTree: React.FC<FileTreeProps> = ({
         })}
       </div>
 
-      {/* Footer Actions */}
       <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-2 bg-zinc-50/50 dark:bg-zinc-900/50">
         <button 
           onClick={onSync}

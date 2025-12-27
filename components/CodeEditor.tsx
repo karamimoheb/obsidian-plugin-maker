@@ -1,6 +1,15 @@
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Copy, Check, Eye, Code, FileCode, Rocket, Zap } from 'lucide-react';
+import { Copy, Check, Eye, Code, FileCode, Rocket } from 'lucide-react';
+import { marked } from 'marked';
+import Prism from 'prismjs';
+
+// Load Prism languages
+import 'prismjs/components/prism-typescript';
+import 'prismjs/components/prism-javascript';
+import 'prismjs/components/prism-json';
+import 'prismjs/components/prism-markdown';
+import 'prismjs/components/prism-css';
 
 interface CodeEditorProps {
   content: string;
@@ -9,9 +18,6 @@ interface CodeEditorProps {
   fileName: string;
   isProcessing?: boolean;
 }
-
-declare const marked: any;
-declare const Prism: any;
 
 const CodeEditor: React.FC<CodeEditorProps> = ({ content, onChange, onBuildFromPlan, fileName, isProcessing }) => {
   const [copied, setCopied] = useState(false);
@@ -56,9 +62,9 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ content, onChange, onBuildFromP
   };
 
   const highlightedCode = useMemo(() => {
-    if (typeof Prism === 'undefined' || !Prism.languages[language]) return content;
+    const grammer = Prism.languages[language] || Prism.languages.clike;
     const code = content + (content.endsWith('\n') ? ' ' : '');
-    return Prism.highlight(code, Prism.languages[language], language);
+    return Prism.highlight(code, grammer, language);
   }, [content, language]);
 
   const handleCopy = () => {
@@ -68,11 +74,10 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ content, onChange, onBuildFromP
   };
 
   const renderedHtml = useMemo(() => {
-    if (!isMarkdown || typeof marked === 'undefined') return '';
+    if (!isMarkdown) return '';
     try {
-      // Use modern marked API if possible
-      if (marked.parse) return marked.parse(content);
-      return marked(content);
+      // Marked.parse returns a string or a promise depending on config
+      return marked.parse(content) as string;
     } catch (e) {
       return '<p>Error rendering preview.</p>';
     }
@@ -117,7 +122,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ content, onChange, onBuildFromP
           </div>
         ) : (
           <div className="absolute inset-0 overflow-auto custom-scrollbar p-6 bg-white dark:bg-zinc-950">
-            <div className={`max-w-4xl mx-auto ${contentDirection === 'rtl' ? 'prose-rtl' : 'prose-ltr'}`} dangerouslySetInnerHTML={{ __html: renderedHtml }} />
+            <div className={`max-w-4xl mx-auto ${contentDirection === 'rtl' ? 'prose-rtl' : 'prose-ltr'} prose dark:prose-invert`} dangerouslySetInnerHTML={{ __html: renderedHtml }} />
           </div>
         )}
       </div>
