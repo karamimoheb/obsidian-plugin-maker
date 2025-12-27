@@ -3,7 +3,7 @@ import React from 'react';
 import { 
   BrainCircuit, X, Play, Pause, CheckCircle2, Circle, 
   Loader2, Sparkles, FileText, Download, AlertCircle, 
-  CheckCircle, ArrowRight 
+  CheckCircle, ArrowRight, RotateCcw
 } from 'lucide-react';
 import { LearningSession, LearningStep } from '../types';
 
@@ -11,6 +11,7 @@ interface LearningModePanelProps {
   session: LearningSession;
   onClose: () => void;
   onStart: () => void;
+  onRevert: () => void;
   onPauseToggle: () => void;
   isProcessing: boolean;
   onDownloadNotes: () => void;
@@ -21,6 +22,7 @@ const LearningModePanel: React.FC<LearningModePanelProps> = ({
   session, 
   onClose, 
   onStart, 
+  onRevert,
   onPauseToggle, 
   isProcessing,
   onDownloadNotes,
@@ -36,6 +38,7 @@ const LearningModePanel: React.FC<LearningModePanelProps> = ({
   const completedCount = session.steps.filter(s => s.status === 'completed').length;
   const progress = (completedCount / session.steps.length) * 100;
   const isFinished = completedCount === session.steps.length;
+  const hasStarted = session.isActive || completedCount > 0;
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-xl p-4 animate-in fade-in duration-300">
@@ -147,7 +150,6 @@ const LearningModePanel: React.FC<LearningModePanelProps> = ({
             </div>
           ))}
 
-          {/* Outputs Section */}
           {isFinished && (
             <div className="mt-8 p-8 bg-green-500/5 border border-green-500/20 rounded-[2.5rem] animate-in zoom-in-95 duration-700">
               <div className="flex flex-col items-center text-center mb-8">
@@ -196,12 +198,12 @@ const LearningModePanel: React.FC<LearningModePanelProps> = ({
         </div>
 
         {/* Footer Controls */}
-        <div className="p-8 border-t border-zinc-800/50 bg-zinc-900/40 flex items-center justify-between z-10">
+        <div className="p-8 border-t border-zinc-800/50 bg-zinc-900/40 flex items-center justify-between z-10 flex-wrap gap-4">
           <div className="flex items-center gap-3">
             {!session.isActive && !isFinished && (
               <button 
                 onClick={onStart}
-                className="bg-blue-600 hover:bg-blue-500 text-white px-10 py-4 rounded-[1.25rem] font-bold transition-all text-sm flex items-center gap-3 shadow-2xl shadow-blue-500/20 active:scale-95 hover:-translate-y-0.5"
+                className="bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-[1.25rem] font-bold transition-all text-sm flex items-center gap-3 shadow-2xl shadow-blue-500/20 active:scale-95 hover:-translate-y-0.5"
               >
                 <Play size={18} fill="currentColor" /> Start Full Review
               </button>
@@ -209,7 +211,7 @@ const LearningModePanel: React.FC<LearningModePanelProps> = ({
             {session.isActive && !isFinished && (
               <button 
                 onClick={onPauseToggle}
-                className={`px-10 py-4 rounded-[1.25rem] font-bold transition-all text-sm flex items-center gap-3 active:scale-95 ${
+                className={`px-8 py-4 rounded-[1.25rem] font-bold transition-all text-sm flex items-center gap-3 active:scale-95 ${
                   session.isPaused 
                     ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-xl shadow-blue-500/20' 
                     : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300'
@@ -226,6 +228,18 @@ const LearningModePanel: React.FC<LearningModePanelProps> = ({
                >
                  Sequence Terminated
                </button>
+            )}
+
+            {/* Revert Button - Visible if learning has started or backup exists */}
+            {hasStarted && (
+              <button 
+                onClick={onRevert}
+                className="group flex items-center gap-3 px-6 py-4 bg-zinc-800/50 hover:bg-red-500/10 border border-zinc-700 hover:border-red-500/30 text-zinc-400 hover:text-red-400 rounded-[1.25rem] font-bold transition-all text-xs active:scale-95 shadow-sm"
+                title="بازگشت به ساختار فایل‌های قبلی"
+              >
+                <RotateCcw size={16} className="group-hover:-rotate-180 transition-transform duration-500" />
+                Restore Previous Tree
+              </button>
             )}
           </div>
           

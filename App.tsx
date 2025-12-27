@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import FileTree from './components/FileTree';
 import CodeEditor from './components/CodeEditor';
 import ChatPanel from './components/ChatPanel';
@@ -11,7 +11,7 @@ import { ProjectState, FileEntry, ChatMessage, ChatAttachment, AIModelConfig, Pr
 import { DEFAULT_FILES } from './constants';
 import { processArchitectRequest, processDebugRequest, processLearningStep } from './services/gemini';
 import { saveProject, loadProject, saveSnapshot, getSnapshots, deleteSnapshot, saveIssue, getIssues, deleteIssue } from './services/db';
-import { Sun, Moon, Loader2, Menu, MessageSquare, AlertCircle, X, History, Bug, ClipboardList, BrainCircuit, Download } from 'lucide-react';
+import { Sun, Moon, Loader2, Menu, MessageSquare, AlertCircle, X, History, Bug, ClipboardList, BrainCircuit } from 'lucide-react';
 
 const PREDEFINED_MODELS: AIModelConfig[] = [
   { id: '3flash', name: 'Gemini 3 Flash', baseUrl: '', apiKey: '', modelName: 'gemini-3-flash-preview', provider: 'gemini' },
@@ -56,31 +56,23 @@ const App: React.FC = () => {
   const [rightPanelWidth, setRightPanelWidth] = useState(320);
   
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
+  const projectRef = useRef<ProjectState>(project);
 
-  const [showSnapshotManager, setShowSnapshotManager] = useState(false);
-  const [showDebugConsole, setShowDebugConsole] = useState(false);
-  const [showRoadmap, setShowRoadmap] = useState(false);
-  const [showLearningMode, setShowLearningMode] = useState(false);
-  const [snapshots, setSnapshots] = useState<ProjectSnapshot[]>([]);
-  const [issues, setIssues] = useState<ProjectIssue[]>([]);
-
-  const getJSZip = () => (window as any).JSZip;
+  useEffect(() => {
+    projectRef.current = project;
+  }, [project]);
 
   useEffect(() => {
     const init = async () => {
       try {
         const saved = await loadProject();
         if (saved) {
-          // Filter out 3pro if it was previously saved
-          const filteredSavedSelectedModel = saved.selectedModelId === '3pro' ? '3flash' : saved.selectedModelId;
-          
+          const filteredSelectedModel = saved.selectedModelId === '3pro' ? '3flash' : (saved.selectedModelId || '3flash');
           setProject(prev => ({ 
             ...prev, 
             ...saved, 
-            selectedModelId: filteredSavedSelectedModel,
-            models: PREDEFINED_MODELS, 
-            learningSession: saved.learningSession || prev.learningSession
+            selectedModelId: filteredSelectedModel,
+            models: PREDEFINED_MODELS
           }));
         }
         setSnapshots(await getSnapshots());
@@ -94,32 +86,23 @@ const App: React.FC = () => {
     init();
   }, []);
 
-  const handleImportZip = (importedFiles: FileEntry[]) => {
-    if (!importedFiles.length) return;
-    const newState = {
-      ...project,
-      files: importedFiles,
-      activeFilePath: importedFiles[0].path,
-      learningSession: {
-        ...project.learningSession!,
-        isZipImported: true,
-        isActive: false,
-        currentStep: 0,
-        steps: INITIAL_LEARNING_STEPS.map(s => ({ ...s, status: 'pending' as const })),
-        outputs: {}
-      }
-    };
-    setProject(newState);
-    saveProject(newState);
-  };
+  const [showSnapshotManager, setShowSnapshotManager] = useState(false);
+  const [showDebugConsole, setShowDebugConsole] = useState(false);
+  const [showRoadmap, setShowRoadmap] = useState(false);
+  const [showLearningMode, setShowLearningMode] = useState(false);
+  const [snapshots, setSnapshots] = useState<ProjectSnapshot[]>([]);
+  const [issues, setIssues] = useState<ProjectIssue[]>([]);
 
-  const executeLearningLoop = async (stepIdx: number, currentProject: ProjectState) => {
+  const getJSZip = () => (window as any).JSZip;
+
+  const executeLearningLoop = async (stepIdx: number) => {
     if (stepIdx >= INITIAL_LEARNING_STEPS.length) {
       setProject(prev => ({ ...prev, learningSession: { ...prev.learningSession!, isActive: false } }));
       return;
     }
 
-    // Step status update
+    if (projectRef.current.learningSession?.isPaused) return;
+
     setProject(prev => ({
       ...prev,
       learningSession: {
@@ -131,51 +114,64 @@ const App: React.FC = () => {
 
     setIsProcessing(true);
     try {
-      const activeModel = PREDEFINED_MODELS.find(m => m.id === currentProject.selectedModelId) || PREDEFINED_MODELS[0];
-      const previousFindings = currentProject.learningSession!.steps
+      const currentProj = projectRef.current;
+      const activeModel = PREDEFINED_MODELS.find(m => m.id === currentProj.selectedModelId) || PREDEFINED_MODELS[0];
+      
+      const previousFindings = currentProj.learningSession!.steps
         .slice(0, stepIdx)
-        .map(s => `### ${s.title}\n${s.result || 'No data.'}`)
+        .map(s => `### ${s.title}\n${s.result || 'Analysis complete.'}`)
         .join('\n\n');
       
-      const response = await processLearningStep(stepIdx, INITIAL_LEARNING_STEPS[stepIdx].title, currentProject.files, previousFindings, activeModel.modelName);
+      const response = await processLearningStep(
+        stepIdx, 
+        INITIAL_LEARNING_STEPS[stepIdx].title, 
+        currentProj.files, 
+        previousFindings, 
+        activeModel.modelName
+      );
       
-      let nextFiles = [...currentProject.files];
-      let notes = currentProject.learningSession?.outputs?.learningNotesContent;
-      let rules = currentProject.learningSession?.outputs?.pluginRulesContent;
+      setProject(prev => {
+        let nextFiles = [...prev.files];
+        let notes = prev.learningSession?.outputs?.learningNotesContent;
+        let rules = prev.learningSession?.outputs?.pluginRulesContent;
 
-      if (response.generatedFiles) {
-        response.generatedFiles.forEach((gen: any) => {
-          const idx = nextFiles.findIndex(f => f.path === gen.path);
-          if (idx > -1) nextFiles[idx] = { ...nextFiles[idx], content: gen.content };
-          else nextFiles.push({ name: gen.path, path: gen.path, type: 'file', content: gen.content });
-          if (gen.path === 'LEARNING_NOTES.md') notes = gen.content;
-          if (gen.path === 'PLUGIN_RULES.md') rules = gen.content;
-        });
-      }
-
-      const nextState: ProjectState = {
-        ...currentProject,
-        files: nextFiles,
-        learningSession: {
-          ...currentProject.learningSession!,
-          steps: currentProject.learningSession!.steps.map((s, i) => 
-            i === stepIdx ? { ...s, status: 'completed' as const, result: response.resultMarkdown } : s
-          ),
-          outputs: { 
-            ...currentProject.learningSession?.outputs, 
-            learningNotesContent: notes, 
-            pluginRulesContent: rules 
-          }
+        if (response.generatedFiles) {
+          response.generatedFiles.forEach((gen: any) => {
+            const idx = nextFiles.findIndex(f => f.path === gen.path);
+            if (idx > -1) nextFiles[idx] = { ...nextFiles[idx], content: gen.content };
+            else nextFiles.push({ name: gen.path, path: gen.path, type: 'file', content: gen.content });
+            if (gen.path === 'LEARNING_NOTES.md') notes = gen.content;
+            if (gen.path === 'PLUGIN_RULES.md') rules = gen.content;
+          });
         }
-      };
 
-      setProject(nextState);
-      saveProject(nextState);
+        const nextState = {
+          ...prev,
+          files: nextFiles,
+          learningSession: {
+            ...prev.learningSession!,
+            steps: prev.learningSession!.steps.map((s, i) => 
+              i === stepIdx ? { ...s, status: 'completed' as const, result: response.resultMarkdown } : s
+            ),
+            outputs: { 
+              ...prev.learningSession?.outputs, 
+              learningNotesContent: notes, 
+              pluginRulesContent: rules 
+            }
+          }
+        };
+        saveProject(nextState);
+        return nextState;
+      });
 
-      if (!nextState.learningSession!.isPaused) {
-        setTimeout(() => executeLearningLoop(stepIdx + 1, nextState), 1200);
-      }
+      setTimeout(() => {
+        if (!projectRef.current.learningSession?.isPaused) {
+          executeLearningLoop(stepIdx + 1);
+        }
+      }, 1000);
+
     } catch (e: any) {
+      console.error("Step Failed:", e);
       setProject(prev => ({
         ...prev,
         learningSession: {
@@ -184,20 +180,78 @@ const App: React.FC = () => {
           isActive: false
         }
       }));
-    } finally { setIsProcessing(false); }
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleStartLearning = () => {
+    // Save current state as backup before starting learning loop
     const freshSession = {
       ...project.learningSession!,
       isActive: true,
       isPaused: false,
       currentStep: 0,
+      backupFiles: [...project.files],
+      backupActiveFilePath: project.activeFilePath,
       steps: INITIAL_LEARNING_STEPS.map(s => ({ ...s, status: 'pending' as const }))
     };
-    const freshProject = { ...project, learningSession: freshSession };
-    setProject(freshProject);
-    executeLearningLoop(0, freshProject);
+    setProject(prev => ({ ...prev, learningSession: freshSession }));
+    setTimeout(() => executeLearningLoop(0), 100);
+  };
+
+  const handleRevertLearning = () => {
+    if (!project.learningSession?.backupFiles) return;
+    
+    if (confirm("آیا می‌خواهید به ساختار درختی و فایل‌های قبلی برگردید؟ تغییرات انجام شده در این جلسه حذف خواهند شد.")) {
+      const restoredFiles = [...project.learningSession.backupFiles];
+      const restoredPath = project.learningSession.backupActiveFilePath;
+      
+      const revertedSession = {
+        ...project.learningSession,
+        isActive: false,
+        isPaused: false,
+        currentStep: 0,
+        steps: INITIAL_LEARNING_STEPS.map(s => ({ ...s, status: 'pending' as const })),
+        outputs: {}
+      };
+
+      const newState = {
+        ...project,
+        files: restoredFiles,
+        activeFilePath: restoredPath || restoredFiles[0]?.path || 'README.md',
+        learningSession: revertedSession
+      };
+      
+      setProject(newState);
+      saveProject(newState);
+      setShowLearningMode(false);
+    }
+  };
+
+  const handleDownloadZip = async () => {
+    const JSZip = getJSZip();
+    if (!JSZip) {
+      setErrorMessage("The ZIP library is still loading or failed to load from CDN. Please refresh the page.");
+      return;
+    }
+    try {
+      const zip = new JSZip();
+      project.files.forEach(file => {
+        if (file.type === 'file') {
+          zip.file(file.path, file.content);
+        }
+      });
+      const content = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(content);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'obsidian-plugin-source.zip';
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+    } catch (e: any) {
+      setErrorMessage("Error generating ZIP: " + e.message);
+    }
   };
 
   const handleSendMessage = async (message: string, attachments: ChatAttachment[]) => {
@@ -219,6 +273,25 @@ const App: React.FC = () => {
     } catch (error: any) {
       setErrorMessage(error.message);
     } finally { setIsProcessing(false); }
+  };
+
+  const handleImportZip = (importedFiles: FileEntry[]) => {
+    if (!importedFiles.length) return;
+    const newState = {
+      ...project,
+      files: importedFiles,
+      activeFilePath: importedFiles[0].path,
+      learningSession: {
+        ...project.learningSession!,
+        isZipImported: true,
+        isActive: false,
+        currentStep: 0,
+        steps: INITIAL_LEARNING_STEPS.map(s => ({ ...s, status: 'pending' as const })),
+        outputs: {}
+      }
+    };
+    setProject(newState);
+    saveProject(newState);
   };
 
   const handleAddIssue = async (log: string) => {
@@ -243,33 +316,6 @@ const App: React.FC = () => {
     } catch (e: any) { setErrorMessage("Debug Fix Failed: " + e.message); } finally { setIsProcessing(false); }
   };
 
-  const handleSaveSnapshot = async (name: string) => {
-    const newSnap: ProjectSnapshot = { id: Math.random().toString(36).substring(2, 11), name, timestamp: Date.now(), files: [...project.files], activeFilePath: project.activeFilePath };
-    await saveSnapshot(newSnap);
-    setSnapshots(prev => [...prev, newSnap]);
-  };
-
-  const handleRestoreSnapshot = (snapshot: ProjectSnapshot) => {
-    const restored = { ...project, files: snapshot.files, activeFilePath: snapshot.activeFilePath };
-    setProject(restored);
-    saveProject(restored);
-    setShowSnapshotManager(false);
-  };
-
-  const handleDownloadZip = async () => {
-    const JSZip = getJSZip();
-    if (!JSZip) return setErrorMessage("JSZip library not found.");
-    try {
-      const zip = new JSZip();
-      project.files.forEach(file => { if (file.type === 'file') zip.file(file.path, file.content); });
-      const content = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(content);
-      const link = document.createElement('a');
-      link.href = url; link.download = 'obsidian-plugin-architect.zip'; link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 100);
-    } catch (e: any) { setErrorMessage("ZIP creation failed: " + e.message); }
-  };
-
   const handleDownloadMarkdown = (content: string | undefined, filename: string) => {
     if (!content) return;
     const blob = new Blob([content], { type: 'text/markdown' });
@@ -277,6 +323,23 @@ const App: React.FC = () => {
     const link = document.createElement('a');
     link.href = url; link.download = filename; link.click();
     setTimeout(() => URL.revokeObjectURL(url), 100);
+  };
+
+  const handleSaveSnapshot = async (name: string) => {
+    const newSnapshot: ProjectSnapshot = {
+      id: Math.random().toString(36).substring(2, 11),
+      name,
+      timestamp: Date.now(),
+      files: project.files,
+      activeFilePath: project.activeFilePath
+    };
+    try {
+      await saveSnapshot(newSnapshot);
+      const updatedSnapshots = await getSnapshots();
+      setSnapshots(updatedSnapshots);
+    } catch (e: any) {
+      setErrorMessage("Failed to save snapshot: " + e.message);
+    }
   };
 
   useEffect(() => {
@@ -292,10 +355,11 @@ const App: React.FC = () => {
           session={project.learningSession} 
           onClose={() => setShowLearningMode(false)}
           onStart={handleStartLearning}
+          onRevert={handleRevertLearning}
           onPauseToggle={() => setProject(p => {
              const nextPaused = !p.learningSession!.isPaused;
-             if (!nextPaused && p.learningSession!.isActive) {
-                executeLearningLoop(p.learningSession!.currentStep, { ...p, learningSession: { ...p.learningSession!, isPaused: nextPaused } });
+             if (!nextPaused) {
+                setTimeout(() => executeLearningLoop(p.learningSession!.currentStep), 100);
              }
              return { ...p, learningSession: { ...p.learningSession!, isPaused: nextPaused } };
           })}
@@ -305,7 +369,7 @@ const App: React.FC = () => {
         />
       )}
 
-      {showSnapshotManager && <SnapshotManager snapshots={snapshots} onClose={() => setShowSnapshotManager(false)} onRestore={handleRestoreSnapshot} onSave={handleSaveSnapshot} onDelete={(id) => deleteSnapshot(id).then(() => setSnapshots(s => s.filter(x => x.id !== id)))} />}
+      {showSnapshotManager && <SnapshotManager snapshots={snapshots} onClose={() => setShowSnapshotManager(false)} onRestore={(s) => { setProject(p => ({...p, files: s.files, activeFilePath: s.activeFilePath})); setShowSnapshotManager(false); }} onSave={(name) => handleSaveSnapshot(name)} onDelete={(id) => deleteSnapshot(id).then(() => setSnapshots(s => s.filter(x => x.id !== id)))} />}
       {showDebugConsole && <DebugConsole issues={issues} isProcessing={isProcessing} onClose={() => setShowDebugConsole(false)} onAddIssue={handleAddIssue} onUpdateStatus={(id, s) => setIssues(p => p.map(i => i.id === id ? {...i, status: s} : i))} onDeleteIssue={(id) => deleteIssue(id).then(() => setIssues(p => p.filter(x => x.id !== id)))} />}
       {showRoadmap && <RoadmapManager tasks={project.tasks || []} onClose={() => setShowRoadmap(false)} onExecuteTask={(t) => { setShowRoadmap(false); handleSendMessage(t, []); }} />}
 
@@ -329,7 +393,7 @@ const App: React.FC = () => {
           </div>
           <div className="flex items-center gap-1 sm:gap-2">
             {project.learningSession?.isZipImported && (
-              <button onClick={() => setShowLearningMode(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-bold bg-blue-600/10 text-blue-500 border border-blue-500/30 hover:bg-blue-600 hover:text-white transition-all">
+              <button onClick={() => setShowLearningMode(true)} className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-bold bg-blue-600/10 text-blue-500 border border-blue-500/30 hover:bg-blue-600 hover:text-white transition-all shadow-sm">
                 <BrainCircuit size={16} /> <span className="hidden sm:inline">Learning Mode</span>
               </button>
             )}

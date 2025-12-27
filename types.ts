@@ -53,7 +53,7 @@ export interface ProjectTask {
 export type LearningStepStatus = 'pending' | 'active' | 'completed' | 'error';
 
 export interface LearningStep {
-  id: string; // Changed to string for flexibility like "step-1"
+  id: string; 
   title: string;
   status: LearningStepStatus;
   description: string;
@@ -69,6 +69,8 @@ export interface LearningSession {
   steps: LearningStep[];
   isPaused: boolean;
   isZipImported: boolean;
+  backupFiles?: FileEntry[]; // Stores state before learning
+  backupActiveFilePath?: string | null;
   outputs?: {
     learningNotesUrl?: string;
     pluginRulesUrl?: string;
@@ -87,6 +89,7 @@ export interface ProjectState {
   theme?: 'dark' | 'light';
   isSynced?: boolean;
   lastSyncTime?: number;
+  // Fix: Removed trailing '?' which is invalid syntax and added '[]' to match array usage in the app
   issues?: ProjectIssue[];
   tasks?: ProjectTask[];
   learningSession?: LearningSession;
